@@ -16,13 +16,22 @@ export default function NotepadApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [bannerDismissed, setBannerDismissed] = useState(false);
 
+  // Link & Selection State
+  const [savedRange, setSavedRange] = useState(null);
+  const [selectedText, setSelectedText] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkDisplayText, setLinkDisplayText] = useState('');
+  const [activeHoverLink, setActiveHoverLink] = useState(null); // { url, rect, node }
+
   // Modal State
-  const [modalType, setModalType] = useState(null); // 'new-section' | 'rename-section' | 'delete-section' | 'delete-note'
+  const [modalType, setModalType] = useState(null); // 'new-section' | 'rename-section' | 'delete-section' | 'delete-note' | 'insert-link'
   const [modalInputValue, setModalInputValue] = useState('');
   const [targetSection, setTargetSection] = useState(null);
 
   const saveTimeoutRef = useRef(null);
   const titleInputRef = useRef(null);
+  const editorRef = useRef(null);
+  const linkInputRef = useRef(null);
 
   // 1. Fetch initial sections and system status
   const loadSections = useCallback(async () => {
@@ -71,12 +80,18 @@ export default function NotepadApp() {
         const first = loadedNotes[0];
         setActiveNoteId(first.id);
         setActiveNoteTitle(first.title);
-        setActiveNoteContent(first.content);
+        setActiveNoteContent(first.content || '');
+        if (editorRef.current) {
+          editorRef.current.innerHTML = first.content || '';
+        }
         setLastSavedTime(new Date(first.updated_at).toLocaleTimeString());
       } else {
         setActiveNoteId(null);
         setActiveNoteTitle('');
         setActiveNoteContent('');
+        if (editorRef.current) {
+          editorRef.current.innerHTML = '';
+        }
         setLastSavedTime(null);
       }
     } catch (err) {
@@ -92,17 +107,29 @@ export default function NotepadApp() {
 
   // 3. Switch active note
   const selectNote = (note) => {
-    // If pending save, flush it
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
       performSave(activeNoteId, activeNoteTitle, activeNoteContent);
     }
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title);
-    setActiveNoteContent(note.content);
+    setActiveNoteContent(note.content || '');
+    if (editorRef.current) {
+      editorRef.current.innerHTML = note.content || '';
+    }
+    setActiveHoverLink(null);
     setSaveStatus('idle');
     setLastSavedTime(new Date(note.updated_at).toLocaleTimeString());
   };
+
+  // Sync editor innerHTML when activeNoteId changes
+  useEffect(() => {
+    if (editorRef.current && activeNoteContent !== undefined) {
+      if (editorRef.current.innerHTML !== activeNoteContent) {
+        editorRef.current.innerHTML = activeNoteContent;
+      }
+    }
+  }, [activeNoteId]); // only re-sync on note change
 
   // 4. Save note to backend
   const performSave = async (noteId, title, content) => {
@@ -118,7 +145,6 @@ export default function NotepadApp() {
       const data = await res.json();
       const updated = data.note;
 
-      // Update local notes list
       setNotes((prevNotes) =>
         prevNotes.map((n) => (n.id === updated.id ? updated : n))
       );
@@ -149,10 +175,11 @@ export default function NotepadApp() {
     triggerAutoSave(val, activeNoteContent);
   };
 
-  const handleContentChange = (e) => {
-    const val = e.target.value;
-    setActiveNoteContent(val);
-    triggerAutoSave(activeNoteTitle, val);
+  const handleEditorInput = () => {
+    if (!editorRef.current) return;
+    const html = editorRef.current.innerHTML;
+    setActiveNoteContent(html);
+    triggerAutoSave(activeNoteTitle, html);
   };
 
   // 6. Manual Immediate Save
@@ -181,7 +208,10 @@ export default function NotepadApp() {
       setNotes((prev) => [newNote, ...prev]);
       setActiveNoteId(newNote.id);
       setActiveNoteTitle(newNote.title);
-      setActiveNoteContent(newNote.content);
+      setActiveNoteContent(newNote.content || '');
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
       setSaveStatus('saved');
       setLastSavedTime(new Date().toLocaleTimeString());
       setTimeout(() => {
@@ -209,6 +239,9 @@ export default function NotepadApp() {
         setActiveNoteId(null);
         setActiveNoteTitle('');
         setActiveNoteContent('');
+        if (editorRef.current) {
+          editorRef.current.innerHTML = '';
+        }
         setLastSavedTime(null);
       }
       setModalType(null);
@@ -283,16 +316,165 @@ export default function NotepadApp() {
     }
   };
 
-  // 10. Plaintext Export / Download
+  // 10. HYPERLINK FEATURE
+  const openInsertLinkModal = () => {
+    const sel = window.getSelection();
+    let text = '';
+    let existingUrl = '';
+
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      setSavedRange(range.cloneRange());
+      text = range.toString();
+
+      // Check if current selection is inside an anchor
+      let parent = range.commonAncestorContainer;
+      if (parent.nodeType === 3) parent = parent.parentNode;
+      const anchor = parent.closest ? parent.closest('a') : null;
+      if (anchor) {
+        existingUrl = anchor.getAttribute('href') || '';
+        if (!text) text = anchor.innerText;
+      }
+    } else {
+      setSavedRange(null);
+    }
+
+    setSelectedText(text);
+    setLinkDisplayText(text);
+    setLinkUrl(existingUrl || 'https://');
+    setModalType('insert-link');
+    setTimeout(() => {
+      linkInputRef.current?.focus();
+      linkInputRef.current?.select();
+    }, 50);
+  };
+
+  const applyHyperlink = () => {
+    let cleanUrl = (linkUrl || '').trim();
+    if (!cleanUrl) return;
+
+    // Auto prepend https:// if missing protocol
+    if (!/^https?:\/\//i.test(cleanUrl) && !cleanUrl.startsWith('#') && !cleanUrl.startsWith('/')) {
+      cleanUrl = 'https://' + cleanUrl;
+    }
+
+    const textToInsert = (linkDisplayText || selectedText || cleanUrl).trim();
+
+    if (savedRange && editorRef.current) {
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(savedRange);
+
+      // Create anchor element
+      const anchor = document.createElement('a');
+      anchor.href = cleanUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.className = 'retro-hyperlink';
+      anchor.innerText = textToInsert;
+
+      savedRange.deleteContents();
+      savedRange.insertNode(anchor);
+
+      // Move cursor after the inserted link
+      const newRange = document.createRange();
+      newRange.setStartAfter(anchor);
+      newRange.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(newRange);
+    } else if (editorRef.current) {
+      // If no range, append to end
+      const anchor = document.createElement('a');
+      anchor.href = cleanUrl;
+      anchor.target = '_blank';
+      anchor.rel = 'noopener noreferrer';
+      anchor.className = 'retro-hyperlink';
+      anchor.innerText = textToInsert;
+      editorRef.current.appendChild(anchor);
+    }
+
+    handleEditorInput();
+    setModalType(null);
+    setSavedRange(null);
+  };
+
+  const removeHyperlink = () => {
+    if (activeHoverLink && activeHoverLink.node) {
+      const parent = activeHoverLink.node.parentNode;
+      while (activeHoverLink.node.firstChild) {
+        parent.insertBefore(activeHoverLink.node.firstChild, activeHoverLink.node);
+      }
+      parent.removeChild(activeHoverLink.node);
+      handleEditorInput();
+      setActiveHoverLink(null);
+      return;
+    }
+
+    // Execute standard unlink on selection
+    document.execCommand('unlink', false, null);
+    handleEditorInput();
+  };
+
+  // Keyboard shortcut Ctrl+K / Cmd+K for link
+  const handleEditorKeyDown = (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      openInsertLinkModal();
+    }
+  };
+
+  // Handle clicking on links inside the editor
+  const handleEditorClick = (e) => {
+    const targetAnchor = e.target.closest('a');
+    if (targetAnchor) {
+      // If holding Ctrl/Cmd, directly open in new tab
+      if (e.ctrlKey || e.metaKey) {
+        window.open(targetAnchor.href, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      e.preventDefault();
+      const rect = targetAnchor.getBoundingClientRect();
+      const editorRect = editorRef.current?.getBoundingClientRect() || { top: 0, left: 0 };
+      setActiveHoverLink({
+        url: targetAnchor.getAttribute('href') || targetAnchor.href,
+        node: targetAnchor,
+        top: rect.bottom - editorRect.top + 5,
+        left: Math.max(10, rect.left - editorRect.left),
+      });
+    } else {
+      setActiveHoverLink(null);
+    }
+  };
+
+  // Formatting helpers
+  const applyFormat = (command) => {
+    document.execCommand(command, false, null);
+    handleEditorInput();
+  };
+
+  // 11. Plaintext Export / Download
   const handleExportText = () => {
     if (!activeNoteTitle && !activeNoteContent) return;
     const activeSection = sections.find((s) => s.id === activeSectionId);
+    
+    // Clean HTML to text while preserving link URLs
+    let cleanBody = activeNoteContent || '';
+    cleanBody = cleanBody.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
+    cleanBody = cleanBody.replace(/<br\s*\/?>/gi, '\n');
+    cleanBody = cleanBody.replace(/<\/div>/gi, '\n');
+    cleanBody = cleanBody.replace(/<\/p>/gi, '\n\n');
+    cleanBody = cleanBody.replace(/<[^>]+>/g, '');
+    cleanBody = cleanBody.replace(/&nbsp;/g, ' ');
+    cleanBody = cleanBody.replace(/&amp;/g, '&');
+    cleanBody = cleanBody.replace(/&lt;/g, '<');
+    cleanBody = cleanBody.replace(/&gt;/g, '>');
+
     const textHeader = `========================================\n` +
       `SECTION: ${activeSection?.name || 'General'}\n` +
       `TITLE:   ${activeNoteTitle || 'Untitled Note'}\n` +
       `DATE:    ${new Date().toLocaleString()}\n` +
       `========================================\n\n`;
-    const fullText = textHeader + activeNoteContent;
+    const fullText = textHeader + cleanBody;
     const blob = new Blob([fullText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -319,10 +501,11 @@ export default function NotepadApp() {
 
   // Word and character count calculation
   const stats = useMemo(() => {
-    const text = (activeNoteContent || '').trim();
+    const raw = activeNoteContent || '';
+    const text = raw.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
     const words = text.length === 0 ? 0 : text.split(/\s+/).length;
     const chars = text.length;
-    const lines = text.length === 0 ? 0 : text.split('\n').length;
+    const lines = raw.split(/<br\s*\/?>|<\/div>|<\/p>/gi).length || 1;
     return { words, chars, lines };
   }, [activeNoteContent]);
 
@@ -493,6 +676,8 @@ export default function NotepadApp() {
                     month: 'short',
                     day: 'numeric',
                   });
+                  // Clean preview snippet
+                  const snippet = (note.content || '').replace(/<[^>]+>/g, ' ').substring(0, 50);
                   return (
                     <li
                       key={note.id}
@@ -502,11 +687,11 @@ export default function NotepadApp() {
                       <div className="note-item-title">{note.title || 'Untitled Note'}</div>
                       <div className="note-item-meta">
                         <span>{dateStr}</span>
-                        <span>{note.content ? `${note.content.split(/\s+/).filter(Boolean).length} words` : 'empty'}</span>
+                        <span>{note.content ? `${snippet.split(/\s+/).filter(Boolean).length} words` : 'empty'}</span>
                       </div>
-                      {note.content && (
+                      {snippet && (
                         <div className="note-item-snippet">
-                          {note.content.substring(0, 50)}...
+                          {snippet}...
                         </div>
                       )}
                     </li>
@@ -535,7 +720,7 @@ export default function NotepadApp() {
                   className="retro-btn small"
                   onClick={handleExportText}
                   disabled={!activeNoteId}
-                  title="Export note as a .txt file"
+                  title="Export note as a .txt file (preserves hyperlinks)"
                 >
                   📥 Export .txt
                 </button>
@@ -571,9 +756,72 @@ export default function NotepadApp() {
               </div>
             </div>
 
+            {/* Inbuilt Retro Formatting Ribbon (Includes Hyperlink Feature) */}
+            {activeNoteId && (
+              <div className="editor-format-bar">
+                <button
+                  id="insert-link-btn"
+                  className="format-btn"
+                  onClick={openInsertLinkModal}
+                  title="Add Hyperlink to selected letter, word, or sentence (Ctrl+K)"
+                >
+                  🔗 Add Link
+                </button>
+                <button
+                  id="remove-link-btn"
+                  className="format-btn"
+                  onClick={removeHyperlink}
+                  title="Remove link from selection"
+                >
+                  ✕ Unlink
+                </button>
+
+                <div className="format-divider"></div>
+
+                <button
+                  className="format-btn"
+                  onClick={() => applyFormat('bold')}
+                  title="Bold (Ctrl+B)"
+                  style={{ fontWeight: 'bold' }}
+                >
+                  B
+                </button>
+                <button
+                  className="format-btn"
+                  onClick={() => applyFormat('italic')}
+                  title="Italic (Ctrl+I)"
+                  style={{ fontStyle: 'italic', fontFamily: 'var(--font-serif)' }}
+                >
+                  I
+                </button>
+                <button
+                  className="format-btn"
+                  onClick={() => applyFormat('underline')}
+                  title="Underline (Ctrl+U)"
+                  style={{ textDecoration: 'underline' }}
+                >
+                  U
+                </button>
+
+                <div className="format-divider"></div>
+
+                <button
+                  className="format-btn"
+                  onClick={() => applyFormat('insertUnorderedList')}
+                  title="Bullet List"
+                >
+                  • List
+                </button>
+
+                <span style={{ fontSize: '11px', color: '#7a7060', marginLeft: 'auto', fontStyle: 'italic' }}>
+                  Tip: Select any word or sentence, then click &quot;🔗 Add Link&quot; or press Ctrl+K
+                </span>
+              </div>
+            )}
+
             {/* Ruled Yellow Notepad Paper Sheet */}
             {activeNoteId ? (
-              <div className="notepad-sheet">
+              <div className="notepad-sheet" style={{ position: 'relative' }}>
                 <input
                   ref={titleInputRef}
                   id="note-title"
@@ -583,14 +831,73 @@ export default function NotepadApp() {
                   value={activeNoteTitle}
                   onChange={handleTitleChange}
                 />
-                <textarea
+
+                {/* Contenteditable Rich Pad with Hyperlinks */}
+                <div
+                  ref={editorRef}
                   id="note-content"
-                  className="note-content-textarea"
-                  placeholder="Start writing your thoughts here..."
-                  value={activeNoteContent}
-                  onChange={handleContentChange}
+                  className="note-content-editable"
+                  contentEditable
+                  suppressContentEditableWarning
+                  data-placeholder="Start writing your thoughts here... Select text and press Ctrl+K to attach a hyperlink."
+                  onInput={handleEditorInput}
+                  onKeyDown={handleEditorKeyDown}
+                  onClick={handleEditorClick}
                   spellCheck={false}
                 />
+
+                {/* Floating Retro Link Bubble Popover when link is clicked */}
+                {activeHoverLink && (
+                  <div
+                    className="retro-link-popover"
+                    style={{
+                      top: `${activeHoverLink.top}px`,
+                      left: `${activeHoverLink.left}px`,
+                    }}
+                  >
+                    <span>🔗</span>
+                    <a
+                      href={activeHoverLink.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-preview"
+                      title={activeHoverLink.url}
+                    >
+                      {activeHoverLink.url}
+                    </a>
+                    <button
+                      className="popover-btn"
+                      onClick={() => window.open(activeHoverLink.url, '_blank', 'noopener,noreferrer')}
+                      title="Open in new tab"
+                    >
+                      ↗ Open
+                    </button>
+                    <button
+                      className="popover-btn"
+                      onClick={() => {
+                        setLinkUrl(activeHoverLink.url);
+                        setLinkDisplayText(activeHoverLink.node.innerText);
+                        setSelectedText(activeHoverLink.node.innerText);
+                        // Save range for replacement
+                        const r = document.createRange();
+                        r.selectNode(activeHoverLink.node);
+                        setSavedRange(r);
+                        setModalType('insert-link');
+                        setActiveHoverLink(null);
+                      }}
+                      title="Edit link URL"
+                    >
+                      ✎ Edit
+                    </button>
+                    <button
+                      className="popover-btn"
+                      onClick={removeHyperlink}
+                      title="Remove hyperlink"
+                    >
+                      ✕ Unlink
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <div
@@ -632,7 +939,7 @@ export default function NotepadApp() {
           <span>Lines: {stats.lines}</span>
         </div>
         <div className="status-panel grow" style={{ justifyContent: 'flex-end' }}>
-          <span>Plaintext / UTF-8</span>
+          <span>Hyperlink Enabled • UTF-8</span>
         </div>
       </footer>
 
@@ -646,6 +953,7 @@ export default function NotepadApp() {
                 {modalType === 'rename-section' && `Rename Section: "${targetSection?.name}"`}
                 {modalType === 'delete-section' && 'Confirm Section Deletion'}
                 {modalType === 'delete-note' && 'Confirm Note Deletion'}
+                {modalType === 'insert-link' && '🔗 Inbuilt Hyperlink Creator'}
               </span>
               <button
                 className="retro-modal-close-btn"
@@ -656,6 +964,59 @@ export default function NotepadApp() {
             </div>
 
             <div className="retro-modal-body">
+              {/* INSERT / EDIT HYPERLINK DIALOG */}
+              {modalType === 'insert-link' && (
+                <>
+                  <div style={{ fontSize: '12px', background: '#e9e3d4', padding: '6px 8px', border: '1px inset #fff' }}>
+                    <strong>Selected Target Text:</strong>{' '}
+                    <span style={{ fontFamily: 'var(--font-typewriter)', color: '#0d3810', fontWeight: 'bold' }}>
+                      &quot;{linkDisplayText || selectedText || '(No text selected)'}&quot;
+                    </span>
+                  </div>
+
+                  {!selectedText && (
+                    <>
+                      <label htmlFor="link-text-input">Display Text for Link:</label>
+                      <input
+                        id="link-text-input"
+                        type="text"
+                        className="retro-input"
+                        placeholder="e.g., Click here or Reference Doc"
+                        value={linkDisplayText}
+                        onChange={(e) => setLinkDisplayText(e.target.value)}
+                      />
+                    </>
+                  )}
+
+                  <label htmlFor="link-url-input">Web Link URL / Address:</label>
+                  <input
+                    ref={linkInputRef}
+                    id="link-url-input"
+                    type="text"
+                    className="retro-input"
+                    placeholder="https://example.com or any web link"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') applyHyperlink();
+                    }}
+                  />
+
+                  <div style={{ fontSize: '11px', color: '#685d4f', fontStyle: 'italic' }}>
+                    Tip: Links will appear underlined in classic blue. In the editor, click any link to open, edit, or remove it.
+                  </div>
+
+                  <div className="retro-modal-actions">
+                    <button className="retro-btn" onClick={() => setModalType(null)}>
+                      Cancel
+                    </button>
+                    <button className="retro-btn primary" onClick={applyHyperlink}>
+                      🔗 Apply Hyperlink
+                    </button>
+                  </div>
+                </>
+              )}
+
               {modalType === 'new-section' && (
                 <>
                   <label htmlFor="section-name-input">Enter Tab / Section Name:</label>

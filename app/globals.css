@@ -575,8 +575,57 @@ html, body {
   font-style: italic;
 }
 
-/* Note Content Textarea with Ruled Lines Alignment */
-.note-content-textarea {
+/* Retro Formatting Ribbon */
+.editor-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 16px;
+  background: #ede5cf;
+  border-bottom: 1px solid #dcd1b3;
+  flex-wrap: wrap;
+}
+
+.format-btn {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: bold;
+  color: #2b2723;
+  background: #eae4d5;
+  border-top: 1px solid #ffffff;
+  border-left: 1px solid #ffffff;
+  border-right: 1px solid #706b60;
+  border-bottom: 1px solid #706b60;
+  padding: 3px 8px;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.format-btn:hover {
+  background: #f5eedf;
+}
+
+.format-btn:active,
+.format-btn.active {
+  border-top: 1px solid #706b60;
+  border-left: 1px solid #706b60;
+  border-right: 1px solid #ffffff;
+  border-bottom: 1px solid #ffffff;
+  background: #ded7c6;
+}
+
+.format-divider {
+  width: 1px;
+  height: 18px;
+  background: #beaf93;
+  margin: 0 4px;
+}
+
+/* Note Content Editable (Replaces plain textarea for rich links) */
+.note-content-editable {
   font-family: var(--font-typewriter);
   font-size: 14px;
   line-height: 28px;
@@ -587,12 +636,93 @@ html, body {
   width: 100%;
   flex-grow: 1;
   min-height: 400px;
-  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-bottom: 60px;
 }
 
-.note-content-textarea::placeholder {
+.note-content-editable:empty:before {
+  content: attr(data-placeholder);
   color: #9f9684;
   font-style: italic;
+  pointer-events: none;
+}
+
+/* Inbuilt Classic Retro Hyperlinks */
+.notepad-sheet a,
+.note-content-editable a {
+  color: #0000cc !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: rgba(220, 235, 255, 0.4);
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.notepad-sheet a:hover,
+.note-content-editable a:hover {
+  color: #8b0000 !important;
+  background-color: rgba(255, 235, 140, 0.7) !important;
+}
+
+.notepad-sheet a:visited,
+.note-content-editable a:visited {
+  color: #551a8b !important;
+}
+
+/* Floating Retro Link Bubble Popover */
+.retro-link-popover {
+  position: absolute;
+  background: #fffef2;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #635b4b;
+  border-bottom: 2px solid #635b4b;
+  box-shadow: 2px 4px 10px rgba(0, 0, 0, 0.25);
+  padding: 5px 8px;
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 100;
+}
+
+.retro-link-popover a.link-preview {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0000cc;
+  text-decoration: underline;
+}
+
+.popover-btn {
+  background: #ede6d6;
+  border-top: 1px solid #fff;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #777;
+  border-bottom: 1px solid #777;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: bold;
+  color: #222;
+}
+
+.popover-btn:hover {
+  background: #fbf5e7;
+}
+
+.popover-btn:active {
+  border-top: 1px solid #777;
+  border-left: 1px solid #777;
+  border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff;
 }
 
 /* Status Bar at Bottom */
