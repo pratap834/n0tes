@@ -7,9 +7,9 @@ export async function PATCH(request, { params }) {
   try {
     const { id } = params;
     const body = await request.json();
-    const { title, content } = body;
+    const { title, content, sectionId } = body || {};
     
-    const note = await dao.updateNote(id, { title, content });
+    const note = await dao.updateNote(id, { title, content, sectionId });
     if (!note) {
       return NextResponse.json({ error: 'Note not found' }, { status: 404 });
     }

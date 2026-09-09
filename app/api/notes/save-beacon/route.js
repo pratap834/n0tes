@@ -21,12 +21,12 @@ export async function POST(request) {
       }
     }
 
-    const { id, title, content } = body || {};
+    const { id, title, content, sectionId } = body || {};
     if (!id) {
       return NextResponse.json({ error: 'Note ID is required' }, { status: 400 });
     }
 
-    const updated = await dao.updateNote(id, { title, content });
+    const updated = await dao.updateNote(id, { title, content, sectionId });
     return NextResponse.json({ success: true, note: updated });
   } catch (error) {
     console.error('POST /api/notes/save-beacon error:', error);

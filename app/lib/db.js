@@ -216,10 +216,21 @@ export const dao = {
     return row;
   },
 
-  async updateNote(id, { title, content }) {
+  async updateNote(id, { title, content, sectionId }) {
     if (!isNeonConfigured()) {
-      const note = memoryStore.notes.find((n) => n.id === id);
-      if (!note) return null;
+      let note = memoryStore.notes.find((n) => n.id === id);
+      if (!note) {
+        note = {
+          id,
+          section_id: sectionId || memoryStore.sections[0]?.id || 'sec-general',
+          title: title !== undefined ? title : 'Untitled Note',
+          content: content !== undefined ? content : '',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        memoryStore.notes.unshift(note);
+        return note;
+      }
       if (title !== undefined) note.title = title;
       if (content !== undefined) note.content = content;
       note.updated_at = new Date().toISOString();
@@ -227,13 +238,25 @@ export const dao = {
     }
     await initDatabase();
     const sql = getDb();
+
+    // Default section fallback if note is being inserted for the first time
+    const targetSectionId = sectionId || (await sql`SELECT id FROM sections LIMIT 1`)[0]?.id || 'sec-general';
+
     const [row] = await sql`
-      UPDATE notes
+      INSERT INTO notes (id, section_id, title, content, created_at, updated_at)
+      VALUES (
+        ${id},
+        ${targetSectionId},
+        ${title !== undefined ? title : 'Untitled Note'},
+        ${content !== undefined ? content : ''},
+        NOW(),
+        NOW()
+      )
+      ON CONFLICT (id) DO UPDATE
       SET 
-        title = COALESCE(${title !== undefined ? title : null}, title),
-        content = COALESCE(${content !== undefined ? content : null}, content),
+        title = CASE WHEN ${title !== undefined} THEN ${title}::text ELSE notes.title END,
+        content = CASE WHEN ${content !== undefined} THEN ${content}::text ELSE notes.content END,
         updated_at = NOW()
-      WHERE id = ${id}
       RETURNING *;
     `;
     return row;

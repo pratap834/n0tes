@@ -39,6 +39,12 @@ export default function NotepadApp() {
   const activeNoteContentRef = useRef(activeNoteContent);
   const hasUnsavedChangesRef = useRef(false);
 
+  const activeSectionIdRef = useRef(activeSectionId);
+
+  useEffect(() => {
+    activeSectionIdRef.current = activeSectionId;
+  }, [activeSectionId]);
+
   useEffect(() => {
     activeNoteIdRef.current = activeNoteId;
   }, [activeNoteId]);
@@ -148,9 +154,17 @@ export default function NotepadApp() {
       const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content }),
+        body: JSON.stringify({
+          title,
+          content,
+          sectionId: activeSectionIdRef.current,
+        }),
       });
-      if (!res.ok) throw new Error('Save failed');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        console.error('Save failed with status:', res.status, errData);
+        throw new Error(errData.error || 'Save failed');
+      }
       const data = await res.json();
       const updated = data.note;
 
@@ -193,9 +207,10 @@ export default function NotepadApp() {
     const noteId = activeNoteIdRef.current;
     const title = activeNoteTitleRef.current;
     const content = activeNoteContentRef.current;
+    const sectionId = activeSectionIdRef.current;
     if (!noteId || !hasUnsavedChangesRef.current) return;
 
-    const payload = JSON.stringify({ id: noteId, title, content });
+    const payload = JSON.stringify({ id: noteId, title, content, sectionId });
 
     // 1. navigator.sendBeacon: standard browser mechanism for unload saving
     if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
