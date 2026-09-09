@@ -1,0 +1,945 @@
+/* ==========================================================================
+   VINTAGE NOTEPAD & DESK LEDGER - BESPOKE RETRO STYLESHEET
+   Authentic stationery, Manila tabs, beveled buttons, and classic typography.
+   Zero modern AI gradient/glassmorphism clichés.
+   ========================================================================== */
+
+:root {
+  --desk-bg: #d7cebe;
+  --desk-pattern-1: #d0c6b5;
+  --paper-bg: #fffde8;
+  --paper-cream: #faf7eb;
+  --paper-line: rgba(70, 100, 160, 0.18);
+  --paper-margin: rgba(210, 60, 60, 0.45);
+  --manila-tab: #e4d8b9;
+  --manila-tab-hover: #ece2c8;
+  --manila-tab-active: #fffde8;
+  --folder-border: #9f9175;
+  --folder-border-dark: #6f644f;
+  --text-main: #2b2723;
+  --text-muted: #6f685f;
+  --retro-blue: #1c3d5a;
+  --retro-btn-bg: #eae4d5;
+  --retro-btn-border-light: #ffffff;
+  --retro-btn-border-dark: #706b60;
+  --retro-statusbar-bg: #ded7c7;
+  --font-ui: "Trebuchet MS", Tahoma, "MS Sans Serif", -apple-system, sans-serif;
+  --font-typewriter: "Courier New", Courier, "Lucida Console", Monaco, monospace;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  min-height: 100vh;
+  background-color: var(--desk-bg);
+  background-image: 
+    radial-gradient(var(--desk-pattern-1) 15%, transparent 16%),
+    radial-gradient(var(--desk-pattern-1) 15%, transparent 16%);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  color: var(--text-main);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* App Container (Desktop Desk Layout) */
+.desk-wrapper {
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 0 16px 30px;
+}
+
+/* Classic Masthead Banner */
+.retro-masthead {
+  background: #f0ebd9;
+  border: 2px solid var(--folder-border-dark);
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.25);
+  padding: 12px 18px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.masthead-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.masthead-stamp {
+  background: #9c2e2e;
+  color: #fff;
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  font-weight: bold;
+  padding: 3px 6px;
+  letter-spacing: 1px;
+  border: 1px dashed #ffffff;
+  box-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+  text-transform: uppercase;
+}
+
+.masthead-title {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  color: #1a1612;
+  text-shadow: 1px 1px 0px #fff;
+}
+
+.masthead-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  font-family: var(--font-serif);
+}
+
+.masthead-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.masthead-date {
+  font-family: var(--font-typewriter);
+  font-size: 12px;
+  color: #3b3730;
+  background: #e2dbca;
+  padding: 4px 8px;
+  border: 1px inset #fff;
+  border-top-color: #9a9485;
+  border-left-color: #9a9485;
+}
+
+/* Classic Retro Beveled Button */
+.retro-btn {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: bold;
+  color: #222;
+  background: var(--retro-btn-bg);
+  border-top: 2px solid var(--retro-btn-border-light);
+  border-left: 2px solid var(--retro-btn-border-light);
+  border-right: 2px solid var(--retro-btn-border-dark);
+  border-bottom: 2px solid var(--retro-btn-border-dark);
+  padding: 5px 12px;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 1px 1px 0px #333333;
+  text-decoration: none;
+}
+
+.retro-btn:hover {
+  background: #f4eee0;
+}
+
+.retro-btn:active {
+  border-top: 2px solid var(--retro-btn-border-dark);
+  border-left: 2px solid var(--retro-btn-border-dark);
+  border-right: 2px solid var(--retro-btn-border-light);
+  border-bottom: 2px solid var(--retro-btn-border-light);
+  box-shadow: none;
+  transform: translate(1px, 1px);
+}
+
+.retro-btn.primary {
+  background: #dbe7db;
+  color: #0d3810;
+}
+
+.retro-btn.primary:hover {
+  background: #e7f2e7;
+}
+
+.retro-btn.danger {
+  background: #f4dcd9;
+  color: #631713;
+}
+
+.retro-btn.danger:hover {
+  background: #fae6e4;
+}
+
+.retro-btn.small {
+  font-size: 11px;
+  padding: 2px 7px;
+}
+
+/* Notebook Binder & Tabs Container */
+.notebook-binder {
+  background: #503d2e;
+  border: 3px solid #2d2118;
+  box-shadow: 4px 6px 12px rgba(0, 0, 0, 0.35);
+  padding: 10px 10px 0 10px;
+  border-radius: 4px;
+  position: relative;
+}
+
+/* Binder Top Spine Bar */
+.binder-spine {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px 8px;
+  color: #f1e7d0;
+  font-size: 11px;
+  font-family: var(--font-typewriter);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  border-bottom: 1px solid #3c2d22;
+  margin-bottom: 8px;
+}
+
+.binder-rings {
+  display: flex;
+  gap: 40px;
+}
+
+.binder-ring {
+  width: 14px;
+  height: 24px;
+  background: linear-gradient(to right, #7b7b7b, #f3f3f3 45%, #ffffff 55%, #666666);
+  border: 1px solid #333;
+  border-radius: 4px;
+  box-shadow: inset 0 2px 3px rgba(0,0,0,0.5), 1px 2px 4px rgba(0,0,0,0.4);
+}
+
+/* Section Tabs Row (Manila Folder Tabs) */
+.section-tabs-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-left: 8px;
+  padding-right: 8px;
+  padding-top: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.section-tabs-bar::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.section-tab {
+  background: var(--manila-tab);
+  border-top: 2px solid var(--folder-border-dark);
+  border-left: 2px solid var(--folder-border-dark);
+  border-right: 2px solid var(--folder-border-dark);
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  padding: 7px 16px 6px;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 600;
+  color: #423b32;
+  cursor: pointer;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background-color 0.1s;
+  white-space: nowrap;
+}
+
+.section-tab:hover {
+  background: var(--manila-tab-hover);
+}
+
+.section-tab.active {
+  background: var(--paper-bg);
+  color: #1a1612;
+  font-weight: bold;
+  padding-bottom: 9px;
+  margin-bottom: -2px;
+  z-index: 10;
+  border-top: 3px solid #736147;
+  box-shadow: 0 -2px 5px rgba(0,0,0,0.15);
+}
+
+.section-tab .tab-badge {
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  background: rgba(0, 0, 0, 0.08);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #40382d;
+}
+
+.section-tab.active .tab-badge {
+  background: #e8debe;
+  font-weight: bold;
+}
+
+.section-tab-actions {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.tab-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #665b4c;
+  font-size: 12px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  line-height: 1;
+}
+
+.tab-action-btn:hover {
+  color: #b01c1c;
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.add-section-tab {
+  background: #cfc19f;
+  border: 2px dashed #82755c;
+  border-bottom: none;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+  padding: 6px 12px 5px;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: bold;
+  color: #443c2c;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.add-section-tab:hover {
+  background: #ded1b0;
+}
+
+/* Main Folder Body (Paper Notepad Content) */
+.folder-body {
+  background: var(--paper-bg);
+  border: 2px solid var(--folder-border-dark);
+  border-top: 2px solid var(--folder-border-dark);
+  position: relative;
+  z-index: 5;
+  display: flex;
+  min-height: 600px;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* Left Sidebar: Table of Contents / Notes Index */
+.notes-sidebar {
+  width: 320px;
+  background: #f7f3df;
+  border-right: 2px solid var(--folder-border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.sidebar-header {
+  padding: 12px;
+  background: #ede6ce;
+  border-bottom: 2px solid var(--folder-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sidebar-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sidebar-title {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: bold;
+  color: #383126;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Classic Inset Search Input */
+.retro-input {
+  font-family: var(--font-ui);
+  font-size: 12px;
+  padding: 5px 8px;
+  background: #ffffff;
+  border: 2px inset #fff;
+  border-top-color: #837a69;
+  border-left-color: #837a69;
+  border-right-color: #d8d2c3;
+  border-bottom-color: #d8d2c3;
+  color: #111;
+  outline: none;
+  width: 100%;
+}
+
+.retro-input:focus {
+  background: #fffff6;
+  border-top-color: #3d3a33;
+  border-left-color: #3d3a33;
+}
+
+/* Notes List in Sidebar */
+.notes-list {
+  list-style: none;
+  overflow-y: auto;
+  flex-grow: 1;
+  max-height: 520px;
+}
+
+.notes-list::-webkit-scrollbar {
+  width: 10px;
+}
+.notes-list::-webkit-scrollbar-track {
+  background: #ece5ce;
+  border-left: 1px solid #d4ccb4;
+}
+.notes-list::-webkit-scrollbar-thumb {
+  background: #b5a98e;
+  border: 2px solid #ece5ce;
+}
+
+.note-item {
+  padding: 10px 14px;
+  border-bottom: 1px dashed #d5cbb3;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.note-item:hover {
+  background: #f0e8cb;
+}
+
+.note-item.active {
+  background: #fffde8;
+  border-left: 4px solid #8e2b2b;
+  box-shadow: inset 2px 0 0 rgba(0,0,0,0.05);
+}
+
+.note-item-title {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: bold;
+  color: #211c16;
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-item-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.note-item-snippet {
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  color: #696257;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 4px;
+}
+
+.no-notes-msg {
+  padding: 30px 16px;
+  text-align: center;
+  font-family: var(--font-typewriter);
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Right Editor: Ruled Yellow Legal Pad Paper */
+.note-editor-pane {
+  flex-grow: 1;
+  background-color: var(--paper-bg);
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  min-width: 0;
+}
+
+/* Editor Action Toolstrip */
+.editor-toolstrip {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #f7f3db;
+  border-bottom: 2px solid #ded4b7;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.toolstrip-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.toolstrip-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.save-indicator {
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  color: #625c4f;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.save-indicator.saving {
+  color: #a45000;
+  font-weight: bold;
+}
+
+.save-indicator.saved {
+  color: #176a26;
+}
+
+/* Ruled Writing Pad Sheet */
+.notepad-sheet {
+  flex-grow: 1;
+  padding: 24px 28px 24px 44px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--paper-bg);
+  /* Ruled horizontal lines */
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0px,
+    transparent 27px,
+    var(--paper-line) 28px
+  );
+  background-attachment: local;
+}
+
+/* Authentic Red Left Margin Line */
+.notepad-sheet::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 32px;
+  width: 2px;
+  background-color: var(--paper-margin);
+  pointer-events: none;
+}
+
+/* Note Title Input */
+.note-title-input {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: bold;
+  color: #1b1712;
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  padding-bottom: 6px;
+  border-bottom: 2px solid rgba(0, 0, 0, 0.2);
+  margin-bottom: 12px;
+}
+
+.note-title-input::placeholder {
+  color: #9f9684;
+  font-style: italic;
+}
+
+/* Retro Formatting Ribbon */
+.editor-format-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 16px;
+  background: #ede5cf;
+  border-bottom: 1px solid #dcd1b3;
+  flex-wrap: wrap;
+}
+
+.format-btn {
+  font-family: var(--font-ui);
+  font-size: 11px;
+  font-weight: bold;
+  color: #2b2723;
+  background: #eae4d5;
+  border-top: 1px solid #ffffff;
+  border-left: 1px solid #ffffff;
+  border-right: 1px solid #706b60;
+  border-bottom: 1px solid #706b60;
+  padding: 3px 8px;
+  cursor: pointer;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.format-btn:hover {
+  background: #f5eedf;
+}
+
+.format-btn:active,
+.format-btn.active {
+  border-top: 1px solid #706b60;
+  border-left: 1px solid #706b60;
+  border-right: 1px solid #ffffff;
+  border-bottom: 1px solid #ffffff;
+  background: #ded7c6;
+}
+
+.format-divider {
+  width: 1px;
+  height: 18px;
+  background: #beaf93;
+  margin: 0 4px;
+}
+
+/* Note Content Editable (Replaces plain textarea for rich links) */
+.note-content-editable {
+  font-family: var(--font-typewriter);
+  font-size: 14px;
+  line-height: 28px;
+  color: #1a1714;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  flex-grow: 1;
+  min-height: 400px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  padding-bottom: 60px;
+}
+
+.note-content-editable:empty:before {
+  content: attr(data-placeholder);
+  color: #9f9684;
+  font-style: italic;
+  pointer-events: none;
+}
+
+/* Inbuilt Classic Retro Hyperlinks */
+.notepad-sheet a,
+.note-content-editable a {
+  color: #0000cc !important;
+  text-decoration: underline !important;
+  text-underline-offset: 2px;
+  font-weight: 600;
+  cursor: pointer;
+  background-color: rgba(220, 235, 255, 0.4);
+  padding: 0 2px;
+  border-radius: 2px;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.notepad-sheet a:hover,
+.note-content-editable a:hover {
+  color: #8b0000 !important;
+  background-color: rgba(255, 235, 140, 0.7) !important;
+}
+
+.notepad-sheet a:visited,
+.note-content-editable a:visited {
+  color: #551a8b !important;
+}
+
+/* Floating Retro Link Bubble Popover */
+.retro-link-popover {
+  position: absolute;
+  background: #fffef2;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #635b4b;
+  border-bottom: 2px solid #635b4b;
+  box-shadow: 2px 4px 10px rgba(0, 0, 0, 0.25);
+  padding: 5px 8px;
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 100;
+}
+
+.retro-link-popover a.link-preview {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #0000cc;
+  text-decoration: underline;
+}
+
+.popover-btn {
+  background: #ede6d6;
+  border-top: 1px solid #fff;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #777;
+  border-bottom: 1px solid #777;
+  padding: 2px 6px;
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: 10px;
+  font-weight: bold;
+  color: #222;
+}
+
+.popover-btn:hover {
+  background: #fbf5e7;
+}
+
+.popover-btn:active {
+  border-top: 1px solid #777;
+  border-left: 1px solid #777;
+  border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff;
+}
+
+/* Status Bar at Bottom */
+.retro-statusbar {
+  margin-top: 14px;
+  background: var(--retro-statusbar-bg);
+  border: 2px solid var(--folder-border-dark);
+  box-shadow: 2px 2px 0px rgba(0,0,0,0.2);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 4px;
+  gap: 4px;
+  font-family: var(--font-typewriter);
+  font-size: 11px;
+}
+
+.status-panel {
+  background: #e9e3d4;
+  border: 1px inset #fff;
+  border-top-color: #8c8574;
+  border-left-color: #8c8574;
+  border-right-color: #fff;
+  border-bottom-color: #fff;
+  padding: 3px 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #3b362c;
+  white-space: nowrap;
+}
+
+.status-panel.grow {
+  flex-grow: 1;
+}
+
+.neon-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.neon-dot.active {
+  background: #11a434;
+  box-shadow: 0 0 4px #11a434;
+}
+
+.neon-dot.demo {
+  background: #d98218;
+}
+
+/* Classic Retro Dialog / Modal Window */
+.retro-modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.retro-modal-window {
+  width: 100%;
+  max-width: 440px;
+  background: #ded8c9;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #5a5345;
+  border-bottom: 2px solid #5a5345;
+  box-shadow: 4px 6px 16px rgba(0, 0, 0, 0.5);
+  padding: 3px;
+}
+
+.retro-modal-titlebar {
+  background: linear-gradient(to right, #1d3c5f, #3a628a);
+  color: #ffffff;
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 0.5px;
+  padding: 4px 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.retro-modal-close-btn {
+  background: #d8d2c2;
+  border-top: 1px solid #fff;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #444;
+  border-bottom: 1px solid #444;
+  color: #111;
+  font-weight: bold;
+  font-size: 11px;
+  width: 18px;
+  height: 18px;
+  line-height: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.retro-modal-close-btn:active {
+  border-top: 1px solid #444;
+  border-left: 1px solid #444;
+  border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff;
+}
+
+.retro-modal-body {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.retro-modal-body label {
+  font-weight: bold;
+  font-size: 12px;
+  color: #332d24;
+}
+
+.retro-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Neon Configuration Instructions Banner */
+.neon-tip-banner {
+  background: #fdf5d6;
+  border: 1px solid #c8b06b;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #55441b;
+  margin-bottom: 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-family: var(--font-ui);
+}
+
+.neon-tip-banner code {
+  background: #ede1b9;
+  padding: 2px 4px;
+  font-family: var(--font-typewriter);
+  font-weight: bold;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .folder-body {
+    flex-direction: column;
+  }
+  .notes-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 2px solid var(--folder-border);
+    max-height: 250px;
+  }
+  .notes-list {
+    max-height: 180px;
+  }
+  .masthead-title {
+    font-size: 20px;
+  }
+  .notepad-sheet {
+    padding: 16px 16px 16px 36px;
+  }
+  .notepad-sheet::before {
+    left: 24px;
+  }
+}
+
+/* Print Friendly Stylesheet */
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+  .retro-masthead,
+  .section-tabs-bar,
+  .binder-spine,
+  .notes-sidebar,
+  .editor-toolstrip,
+  .retro-statusbar,
+  .neon-tip-banner {
+    display: none !important;
+  }
+  .notebook-binder {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+  .folder-body {
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .notepad-sheet {
+    background-image: none !important;
+    padding: 0 !important;
+  }
+  .notepad-sheet::before {
+    display: none !important;
+  }
+  .note-title-input {
+    border-bottom: 2px solid #000 !important;
+  }
+}

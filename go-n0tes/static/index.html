@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Electronic Notepad • Go & NeonDB</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="desk-wrapper">
+    <!-- Notice Banner for Local Demo -->
+    <div id="neon-banner" class="neon-tip-banner" style="display: none;">
+      <div>
+        <strong>📌 Notice:</strong> Running in <em>Local In-Memory Mode</em>. To connect your <strong>NeonDB</strong>, add <code>DATABASE_URL=postgresql://...</code> to your <code>.env</code> file.
+      </div>
+      <button id="dismiss-banner-btn" class="tab-action-btn" style="font-weight: bold;" title="Dismiss">✕</button>
+    </div>
+
+    <!-- Retro Masthead Header -->
+    <header class="retro-masthead">
+      <div class="masthead-brand">
+        <span class="masthead-stamp">Go Edition</span>
+        <div>
+          <h1 class="masthead-title">THE NOTEPAD</h1>
+          <p class="masthead-subtitle">Personal Electronic Desk Ledger & Sectional Notebook (Go + NeonDB)</p>
+        </div>
+      </div>
+      <div class="masthead-actions">
+        <span id="today-date" class="masthead-date">📅 ...</span>
+        <button id="new-note-btn" class="retro-btn primary" title="Create a new note in the current section">
+          ✏️ New Note
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Notebook Binder & Manila Tabs -->
+    <main class="notebook-binder">
+      <!-- Decorative Vintage Binder Rings & Spine -->
+      <div class="binder-spine">
+        <span>Standard Sectioned Ledger • Heavyweight Stationery</span>
+        <div class="binder-rings">
+          <div class="binder-ring"></div>
+          <div class="binder-ring"></div>
+          <div class="binder-ring"></div>
+        </div>
+        <span>NeonDB Persistent Storage (Go)</span>
+      </div>
+
+      <!-- Section Tabs (Folder Tabs) -->
+      <div id="section-tabs-bar" class="section-tabs-bar" role="tablist">
+        <!-- Injected via JavaScript -->
+        <button id="add-section-btn" class="add-section-tab" title="Create a new tab section">
+          + New Tab
+        </button>
+      </div>
+
+      <!-- Main Folder Interior: Two Columns (Table of Contents + Ruled Paper Notepad) -->
+      <div class="folder-body">
+        <!-- Left Column: Sidebar Index -->
+        <aside class="notes-sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title-row">
+              <span id="sidebar-section-title" class="sidebar-title">Index</span>
+              <span id="sidebar-count" style="font-size: 11px; color: #685d4f;">0 Entries</span>
+            </div>
+            <input
+              id="search-notes-input"
+              type="text"
+              placeholder="Search notes in tab..."
+              class="retro-input"
+            />
+          </div>
+
+          <!-- Note Listing -->
+          <ul id="notes-list" class="notes-list">
+            <li class="no-notes-msg">Loading records...</li>
+          </ul>
+        </aside>
+
+        <!-- Right Column: Ruled Legal Pad / Stationery Sheet -->
+        <section class="note-editor-pane">
+          <!-- Editor Action Toolstrip -->
+          <div class="editor-toolstrip">
+            <div class="toolstrip-left">
+              <button id="save-note-btn" class="retro-btn" title="Force save note now">
+                💾 Save Note
+              </button>
+              <button id="export-note-btn" class="retro-btn small" title="Export note as a .txt file">
+                📥 Export .txt
+              </button>
+              <button id="print-note-btn" class="retro-btn small" title="Print note or save to PDF">
+                🖨️ Print
+              </button>
+            </div>
+
+            <div class="toolstrip-right">
+              <div id="save-indicator" class="save-indicator">
+                Saved
+              </div>
+              <button id="delete-note-btn" class="retro-btn danger small" title="Delete this note">
+                🗑️ Tear Out
+              </button>
+            </div>
+          </div>
+
+          <!-- Inbuilt Retro Formatting Ribbon (Includes Hyperlink Feature) -->
+          <div id="editor-format-bar" class="editor-format-bar">
+            <button id="insert-link-btn" class="format-btn" title="Add Hyperlink to selected text (Ctrl+K)">
+              🔗 Add Link
+            </button>
+            <button id="remove-link-btn" class="format-btn" title="Remove link from selection">
+              ✕ Unlink
+            </button>
+
+            <div class="format-divider"></div>
+
+            <button id="bold-btn" class="format-btn" title="Bold (Ctrl+B)" style="font-weight: bold;">
+              B
+            </button>
+            <button id="italic-btn" class="format-btn" title="Italic (Ctrl+I)" style="font-style: italic; font-family: var(--font-serif);">
+              I
+            </button>
+            <button id="underline-btn" class="format-btn" title="Underline (Ctrl+U)" style="text-decoration: underline;">
+              U
+            </button>
+
+            <div class="format-divider"></div>
+
+            <button id="bullet-btn" class="format-btn" title="Bullet List">
+              • List
+            </button>
+
+            <span style="font-size: 11px; color: #7a7060; margin-left: auto; font-style: italic;">
+              🛡️ Auto-saves continuously &amp; on page close
+            </span>
+          </div>
+
+          <!-- Ruled Yellow Notepad Paper Sheet -->
+          <div id="notepad-container" class="notepad-sheet" style="position: relative;">
+            <input
+              id="note-title"
+              type="text"
+              class="note-title-input"
+              placeholder="Note Title..."
+            />
+
+            <!-- Contenteditable Rich Pad with Hyperlinks -->
+            <div
+              id="note-content"
+              class="note-content-editable"
+              contenteditable="true"
+              spellcheck="false"
+              data-placeholder="Start writing your thoughts here... Select text and press Ctrl+K to attach a hyperlink."
+            ></div>
+
+            <!-- Floating Retro Link Popover -->
+            <div id="link-popover" class="retro-link-popover" style="display: none;">
+              <span>🔗</span>
+              <a id="popover-link-preview" href="#" target="_blank" rel="noopener noreferrer" class="link-preview"></a>
+              <button id="popover-open-btn" class="popover-btn" title="Open in new tab">↗ Open</button>
+              <button id="popover-edit-btn" class="popover-btn" title="Edit link URL">✎ Edit</button>
+              <button id="popover-unlink-btn" class="popover-btn" title="Remove hyperlink">✕ Unlink</button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <!-- Retro Inset Status Bar -->
+    <footer class="retro-statusbar">
+      <div class="status-panel">
+        <span id="neon-dot" class="neon-dot active"></span>
+        <span id="neon-status-text">NeonDB: Connected</span>
+      </div>
+      <div class="status-panel">
+        <span id="status-active-tab">Active Tab: General</span>
+      </div>
+      <div class="status-panel">
+        <span id="status-notes-count">Notes in Tab: 0</span>
+      </div>
+      <div class="status-panel">
+        <span id="status-words-count">Words: 0</span>
+      </div>
+      <div class="status-panel">
+        <span id="status-lines-count">Lines: 0</span>
+      </div>
+      <div class="status-panel">
+        <span>🛡️ Auto-Save: Active (On Edit &amp; Close)</span>
+      </div>
+      <div class="status-panel grow" style="justify-content: flex-end;">
+        <span>Go 1.26 • Hyperlink Enabled</span>
+      </div>
+    </footer>
+
+    <!-- Classic Windows/System Dialog Modals -->
+    <div id="modal-backdrop" class="retro-modal-backdrop" style="display: none;">
+      <div class="retro-modal-window" onclick="event.stopPropagation()">
+        <div class="retro-modal-titlebar">
+          <span id="modal-title">Dialog Window</span>
+          <button id="modal-close-btn" class="retro-modal-close-btn">✕</button>
+        </div>
+        <div id="modal-body" class="retro-modal-body">
+          <!-- Dynamic Content Injected via JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
