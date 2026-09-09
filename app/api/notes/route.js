@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { dao } from '@/lib/db';
+import { dao } from '../../lib/db';
 
 export const dynamic = 'force-dynamic';
 

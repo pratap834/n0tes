@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isNeonConfigured } from '@/lib/db';
+import { isNeonConfigured } from '../../lib/db';
 
 export const dynamic = 'force-dynamic';
 
