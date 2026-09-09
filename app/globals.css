@@ -226,16 +226,18 @@ html, body {
   align-items: flex-end;
   gap: 4px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding-left: 8px;
   padding-right: 8px;
-  scrollbar-width: thin;
+  padding-top: 4px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
 .section-tabs-bar::-webkit-scrollbar {
-  height: 6px;
-}
-.section-tabs-bar::-webkit-scrollbar-thumb {
-  background: #a89a80;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .section-tab {
