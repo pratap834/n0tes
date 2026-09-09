@@ -21,11 +21,11 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { sectionId, title, content } = body;
+    const { sectionId, title, content, id } = body;
     if (!sectionId) {
       return NextResponse.json({ error: 'sectionId is required' }, { status: 400 });
     }
-    const note = await dao.createNote(sectionId, title, content);
+    const note = await dao.createNote(sectionId, title, content, id);
     return NextResponse.json({ note }, { status: 201 });
   } catch (error) {
     console.error('POST /api/notes error:', error);

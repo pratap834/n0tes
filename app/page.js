@@ -28,10 +28,28 @@ export default function NotepadApp() {
   const [modalInputValue, setModalInputValue] = useState('');
   const [targetSection, setTargetSection] = useState(null);
 
+  // Refs for bulletproof lifecycle auto-saving on page close / unload
   const saveTimeoutRef = useRef(null);
   const titleInputRef = useRef(null);
   const editorRef = useRef(null);
   const linkInputRef = useRef(null);
+
+  const activeNoteIdRef = useRef(activeNoteId);
+  const activeNoteTitleRef = useRef(activeNoteTitle);
+  const activeNoteContentRef = useRef(activeNoteContent);
+  const hasUnsavedChangesRef = useRef(false);
+
+  useEffect(() => {
+    activeNoteIdRef.current = activeNoteId;
+  }, [activeNoteId]);
+
+  useEffect(() => {
+    activeNoteTitleRef.current = activeNoteTitle;
+  }, [activeNoteTitle]);
+
+  useEffect(() => {
+    activeNoteContentRef.current = activeNoteContent;
+  }, [activeNoteContent]);
 
   // 1. Fetch initial sections and system status
   const loadSections = useCallback(async () => {
@@ -73,7 +91,24 @@ export default function NotepadApp() {
     try {
       const res = await fetch(`/api/notes?sectionId=${encodeURIComponent(secId)}`);
       const data = await res.json();
-      const loadedNotes = data.notes || [];
+      let loadedNotes = data.notes || [];
+
+      // Check for any local crash recovery drafts
+      if (typeof window !== 'undefined' && window.localStorage) {
+        loadedNotes = loadedNotes.map((n) => {
+          try {
+            const rawDraft = window.localStorage.getItem(`n0tes_draft_${n.id}`);
+            if (rawDraft) {
+              const draft = JSON.parse(rawDraft);
+              if (draft.savedAt && draft.savedAt > new Date(n.updated_at).getTime()) {
+                return { ...n, title: draft.title || n.title, content: draft.content !== undefined ? draft.content : n.content };
+              }
+            }
+          } catch {}
+          return n;
+        });
+      }
+
       setNotes(loadedNotes);
 
       if (loadedNotes.length > 0) {
@@ -105,12 +140,125 @@ export default function NotepadApp() {
     }
   }, [activeSectionId, loadNotes]);
 
-  // 3. Switch active note
-  const selectNote = (note) => {
+  // 3. Save note to backend
+  const performSave = async (noteId, title, content) => {
+    if (!noteId) return;
+    setSaveStatus('saving');
+    try {
+      const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content }),
+      });
+      if (!res.ok) throw new Error('Save failed');
+      const data = await res.json();
+      const updated = data.note;
+
+      // Update local notes list
+      setNotes((prevNotes) =>
+        prevNotes.map((n) => (n.id === updated.id ? updated : n))
+      );
+
+      // Clean local storage draft once server save succeeds
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem(`n0tes_draft_${noteId}`);
+      }
+
+      hasUnsavedChangesRef.current = false;
+      setSaveStatus('saved');
+      setLastSavedTime(new Date().toLocaleTimeString());
+    } catch (err) {
+      console.error('Auto-save error:', err);
+      setSaveStatus('error');
+    }
+  };
+
+  // Immediate flush before switching notes or sections
+  const flushPendingSave = useCallback(() => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
-      performSave(activeNoteId, activeNoteTitle, activeNoteContent);
+      saveTimeoutRef.current = null;
     }
+    if (hasUnsavedChangesRef.current && activeNoteIdRef.current) {
+      performSave(
+        activeNoteIdRef.current,
+        activeNoteTitleRef.current,
+        activeNoteContentRef.current
+      );
+    }
+  }, []);
+
+  // 4. Guaranteed Auto-Save When Webpage Closes / Unloads
+  const saveImmediatelyOnPageClose = useCallback(() => {
+    const noteId = activeNoteIdRef.current;
+    const title = activeNoteTitleRef.current;
+    const content = activeNoteContentRef.current;
+    if (!noteId || !hasUnsavedChangesRef.current) return;
+
+    const payload = JSON.stringify({ id: noteId, title, content });
+
+    // 1. navigator.sendBeacon: standard browser mechanism for unload saving
+    if (typeof navigator !== 'undefined' && navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' });
+      navigator.sendBeacon('/api/notes/save-beacon', blob);
+    }
+
+    // 2. fetch with keepalive: true (persists across page destruction)
+    try {
+      fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        keepalive: true,
+      });
+    } catch (e) {
+      // Ignore synchronous catch during unload
+    }
+
+    // 3. Instant synchronous backup in localStorage
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(`n0tes_draft_${noteId}`, JSON.stringify({
+          title,
+          content,
+          savedAt: Date.now(),
+        }));
+      }
+    } catch (e) {}
+
+    hasUnsavedChangesRef.current = false;
+  }, []);
+
+  // Register unload, pagehide, and visibilitychange event listeners
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      saveImmediatelyOnPageClose();
+    };
+
+    const handlePageHide = () => {
+      saveImmediatelyOnPageClose();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        saveImmediatelyOnPageClose();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener('pagehide', handlePageHide);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('pagehide', handlePageHide);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [saveImmediatelyOnPageClose]);
+
+  // 5. Switch active note
+  const selectNote = (note) => {
+    flushPendingSave();
     setActiveNoteId(note.id);
     setActiveNoteTitle(note.title);
     setActiveNoteContent(note.content || '');
@@ -131,42 +279,29 @@ export default function NotepadApp() {
     }
   }, [activeNoteId]); // only re-sync on note change
 
-  // 4. Save note to backend
-  const performSave = async (noteId, title, content) => {
-    if (!noteId) return;
-    setSaveStatus('saving');
-    try {
-      const res = await fetch(`/api/notes/${encodeURIComponent(noteId)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, content }),
-      });
-      if (!res.ok) throw new Error('Save failed');
-      const data = await res.json();
-      const updated = data.note;
-
-      setNotes((prevNotes) =>
-        prevNotes.map((n) => (n.id === updated.id ? updated : n))
-      );
-
-      setSaveStatus('saved');
-      setLastSavedTime(new Date().toLocaleTimeString());
-    } catch (err) {
-      console.error('Auto-save error:', err);
-      setSaveStatus('error');
-    }
-  };
-
-  // 5. Debounced auto-save on edit
+  // 6. Debounced auto-save on edit + instant localStorage cache
   const triggerAutoSave = (newTitle, newContent) => {
     if (!activeNoteId) return;
+    hasUnsavedChangesRef.current = true;
     setSaveStatus('saving');
+
+    // Instant local backup
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.setItem(`n0tes_draft_${activeNoteId}`, JSON.stringify({
+          title: newTitle,
+          content: newContent,
+          savedAt: Date.now(),
+        }));
+      }
+    } catch {}
+
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
     }
     saveTimeoutRef.current = setTimeout(() => {
       performSave(activeNoteId, newTitle, newContent);
-    }, 800);
+    }, 600);
   };
 
   const handleTitleChange = (e) => {
@@ -182,7 +317,7 @@ export default function NotepadApp() {
     triggerAutoSave(activeNoteTitle, html);
   };
 
-  // 6. Manual Immediate Save
+  // 7. Manual Immediate Save
   const handleManualSave = () => {
     if (saveTimeoutRef.current) {
       clearTimeout(saveTimeoutRef.current);
@@ -190,41 +325,63 @@ export default function NotepadApp() {
     performSave(activeNoteId, activeNoteTitle, activeNoteContent);
   };
 
-  // 7. Create New Note
+  // 8. Create New Note with Immediate Persistence
   const handleCreateNewNote = async () => {
     if (!activeSectionId) return;
+    flushPendingSave();
+
+    // Generate unique ID upfront for 0ms lag
+    const newId = 'note-' + Math.random().toString(36).substring(2, 9) + Date.now().toString(36);
+    const initialTitle = 'Untitled Note';
+    const initialContent = '';
+
+    const newNote = {
+      id: newId,
+      section_id: activeSectionId,
+      title: initialTitle,
+      content: initialContent,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    // Optimistically update state so user can type immediately
+    setNotes((prev) => [newNote, ...prev]);
+    setActiveNoteId(newId);
+    setActiveNoteTitle(initialTitle);
+    setActiveNoteContent(initialContent);
+    if (editorRef.current) {
+      editorRef.current.innerHTML = '';
+    }
+    setSaveStatus('saving');
+
     try {
       const res = await fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: newId,
           sectionId: activeSectionId,
-          title: 'Untitled Note',
-          content: '',
+          title: initialTitle,
+          content: initialContent,
         }),
       });
       const data = await res.json();
-      const newNote = data.note;
-      setNotes((prev) => [newNote, ...prev]);
-      setActiveNoteId(newNote.id);
-      setActiveNoteTitle(newNote.title);
-      setActiveNoteContent(newNote.content || '');
-      if (editorRef.current) {
-        editorRef.current.innerHTML = '';
+      if (data.note) {
+        setNotes((prev) => prev.map((n) => (n.id === newId ? data.note : n)));
+        setSaveStatus('saved');
+        setLastSavedTime(new Date().toLocaleTimeString());
       }
-      setSaveStatus('saved');
-      setLastSavedTime(new Date().toLocaleTimeString());
-      setTimeout(() => {
-        titleInputRef.current?.focus();
-        titleInputRef.current?.select();
-      }, 50);
     } catch (err) {
-      console.error('Failed to create note:', err);
-      alert('Could not create new note. Please try again.');
+      console.error('Failed to create note in database:', err);
     }
+
+    setTimeout(() => {
+      titleInputRef.current?.focus();
+      titleInputRef.current?.select();
+    }, 50);
   };
 
-  // 8. Delete Note
+  // 9. Delete Note
   const handleDeleteNoteConfirm = async () => {
     if (!activeNoteId) return;
     try {
@@ -251,10 +408,11 @@ export default function NotepadApp() {
     }
   };
 
-  // 9. Section Management
+  // 10. Section Management
   const handleCreateSection = async () => {
     const name = modalInputValue.trim();
     if (!name) return;
+    flushPendingSave();
     try {
       const res = await fetch('/api/sections', {
         method: 'POST',
@@ -316,7 +474,7 @@ export default function NotepadApp() {
     }
   };
 
-  // 10. HYPERLINK FEATURE
+  // 11. HYPERLINK FEATURE
   const openInsertLinkModal = () => {
     const sel = window.getSelection();
     let text = '';
@@ -353,7 +511,6 @@ export default function NotepadApp() {
     let cleanUrl = (linkUrl || '').trim();
     if (!cleanUrl) return;
 
-    // Auto prepend https:// if missing protocol
     if (!/^https?:\/\//i.test(cleanUrl) && !cleanUrl.startsWith('#') && !cleanUrl.startsWith('/')) {
       cleanUrl = 'https://' + cleanUrl;
     }
@@ -365,7 +522,6 @@ export default function NotepadApp() {
       sel.removeAllRanges();
       sel.addRange(savedRange);
 
-      // Create anchor element
       const anchor = document.createElement('a');
       anchor.href = cleanUrl;
       anchor.target = '_blank';
@@ -376,14 +532,12 @@ export default function NotepadApp() {
       savedRange.deleteContents();
       savedRange.insertNode(anchor);
 
-      // Move cursor after the inserted link
       const newRange = document.createRange();
       newRange.setStartAfter(anchor);
       newRange.collapse(true);
       sel.removeAllRanges();
       sel.addRange(newRange);
     } else if (editorRef.current) {
-      // If no range, append to end
       const anchor = document.createElement('a');
       anchor.href = cleanUrl;
       anchor.target = '_blank';
@@ -410,7 +564,6 @@ export default function NotepadApp() {
       return;
     }
 
-    // Execute standard unlink on selection
     document.execCommand('unlink', false, null);
     handleEditorInput();
   };
@@ -427,7 +580,6 @@ export default function NotepadApp() {
   const handleEditorClick = (e) => {
     const targetAnchor = e.target.closest('a');
     if (targetAnchor) {
-      // If holding Ctrl/Cmd, directly open in new tab
       if (e.ctrlKey || e.metaKey) {
         window.open(targetAnchor.href, '_blank', 'noopener,noreferrer');
         return;
@@ -452,12 +604,11 @@ export default function NotepadApp() {
     handleEditorInput();
   };
 
-  // 11. Plaintext Export / Download
+  // 12. Plaintext Export / Download
   const handleExportText = () => {
     if (!activeNoteTitle && !activeNoteContent) return;
     const activeSection = sections.find((s) => s.id === activeSectionId);
     
-    // Clean HTML to text while preserving link URLs
     let cleanBody = activeNoteContent || '';
     cleanBody = cleanBody.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
     cleanBody = cleanBody.replace(/<br\s*\/?>/gi, '\n');
@@ -588,6 +739,7 @@ export default function NotepadApp() {
                 className={`section-tab ${isActive ? 'active' : ''}`}
                 onClick={() => {
                   if (activeSectionId !== sec.id) {
+                    flushPendingSave();
                     setActiveSectionId(sec.id);
                   }
                 }}
@@ -631,6 +783,7 @@ export default function NotepadApp() {
             id="add-section-btn"
             className="add-section-tab"
             onClick={() => {
+              flushPendingSave();
               setModalInputValue('');
               setModalType('new-section');
             }}
@@ -676,7 +829,6 @@ export default function NotepadApp() {
                     month: 'short',
                     day: 'numeric',
                   });
-                  // Clean preview snippet
                   const snippet = (note.content || '').replace(/<[^>]+>/g, ' ').substring(0, 50);
                   return (
                     <li
@@ -738,9 +890,9 @@ export default function NotepadApp() {
               <div className="toolstrip-right">
                 <div className={`save-indicator ${saveStatus}`}>
                   {saveStatus === 'saving' && '⏳ Saving to Neon...'}
-                  {saveStatus === 'saved' && `✓ Saved (${lastSavedTime})`}
+                  {saveStatus === 'saved' && `✓ Autosaved (${lastSavedTime})`}
                   {saveStatus === 'error' && '⚠️ Save failed'}
-                  {saveStatus === 'idle' && lastSavedTime && `Last saved: ${lastSavedTime}`}
+                  {saveStatus === 'idle' && lastSavedTime && `Saved: ${lastSavedTime}`}
                 </div>
 
                 {activeNoteId && (
@@ -814,7 +966,7 @@ export default function NotepadApp() {
                 </button>
 
                 <span style={{ fontSize: '11px', color: '#7a7060', marginLeft: 'auto', fontStyle: 'italic' }}>
-                  Tip: Select any word or sentence, then click &quot;🔗 Add Link&quot; or press Ctrl+K
+                  🛡️ Auto-saves continuously &amp; on page close
                 </span>
               </div>
             )}
@@ -878,7 +1030,6 @@ export default function NotepadApp() {
                         setLinkUrl(activeHoverLink.url);
                         setLinkDisplayText(activeHoverLink.node.innerText);
                         setSelectedText(activeHoverLink.node.innerText);
-                        // Save range for replacement
                         const r = document.createRange();
                         r.selectNode(activeHoverLink.node);
                         setSavedRange(r);
@@ -938,8 +1089,11 @@ export default function NotepadApp() {
         <div className="status-panel">
           <span>Lines: {stats.lines}</span>
         </div>
+        <div className="status-panel">
+          <span>🛡️ Auto-Save: Active (On Edit &amp; Close)</span>
+        </div>
         <div className="status-panel grow" style={{ justifyContent: 'flex-end' }}>
-          <span>Hyperlink Enabled • UTF-8</span>
+          <span>UTF-8 • Hyperlink Enabled</span>
         </div>
       </footer>
 
