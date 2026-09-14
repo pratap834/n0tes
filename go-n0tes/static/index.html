@@ -89,6 +89,12 @@
               <button id="export-note-btn" class="retro-btn small" title="Export note as a .txt file">
                 📥 Export .txt
               </button>
+              <button id="export-docx-btn" class="retro-btn small" title="Export note as a formatted Word Document (.docx)">
+                📄 Export .docx
+              </button>
+              <button id="export-pdf-btn" class="retro-btn small" title="Export note as a high-fidelity PDF Document (.pdf)">
+                📑 Export .pdf
+              </button>
               <button id="print-note-btn" class="retro-btn small" title="Print note or save to PDF">
                 🖨️ Print
               </button>
@@ -130,6 +136,18 @@
             <button id="bullet-btn" class="format-btn" title="Bullet List">
               • List
             </button>
+
+            <div class="format-divider"></div>
+
+            <button id="insert-image-btn" class="format-btn" title="Insert Image (or paste directly via Ctrl+V)">
+              🖼️ Image
+            </button>
+            <input
+              id="image-file-input"
+              type="file"
+              accept="image/*"
+              style="display: none;"
+            />
 
             <span style="font-size: 11px; color: #7a7060; margin-left: auto; font-style: italic;">
               🛡️ Auto-saves continuously &amp; on page close
@@ -207,6 +225,10 @@
     </div>
   </div>
 
+  <!-- Locally Vendored Offline Scripts (Embedded in Go Binary) -->
+  <script src="/vendor/docx.iife.js"></script>
+  <script src="/vendor/jspdf.umd.min.js"></script>
+  <script src="/vendor/html2canvas.min.js"></script>
   <script src="/app.js"></script>
 </body>
 </html>

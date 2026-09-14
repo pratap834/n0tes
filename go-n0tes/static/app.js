@@ -32,6 +32,8 @@
   const saveNoteBtn = document.getElementById('save-note-btn');
   const deleteNoteBtn = document.getElementById('delete-note-btn');
   const exportNoteBtn = document.getElementById('export-note-btn');
+  const exportDocxBtn = document.getElementById('export-docx-btn');
+  const exportPdfBtn = document.getElementById('export-pdf-btn');
   const printNoteBtn = document.getElementById('print-note-btn');
   const saveIndicator = document.getElementById('save-indicator');
   const linkPopover = document.getElementById('link-popover');
@@ -51,6 +53,8 @@
   const italicBtn = document.getElementById('italic-btn');
   const underlineBtn = document.getElementById('underline-btn');
   const bulletBtn = document.getElementById('bullet-btn');
+  const insertImageBtn = document.getElementById('insert-image-btn');
+  const imageFileInput = document.getElementById('image-file-input');
 
   // Status Bar Elements
   const neonDot = document.getElementById('neon-dot');
@@ -679,6 +683,113 @@
         openInsertLinkModal();
       }
     });
+
+    // Evernote-Style Direct Image Pasting
+    noteContentDiv.addEventListener('paste', (e) => {
+      const clipboardData = e.clipboardData;
+      if (!clipboardData) return;
+
+      const items = Array.from(clipboardData.items || []);
+      const imageItem = items.find((it) => it.type.startsWith('image/'));
+      if (imageItem) {
+        e.preventDefault();
+        const file = imageItem.getAsFile();
+        if (file) insertImageIntoEditor(file);
+        return;
+      }
+
+      const files = Array.from(clipboardData.files || []);
+      const imageFile = files.find((f) => f.type.startsWith('image/'));
+      if (imageFile) {
+        e.preventDefault();
+        insertImageIntoEditor(imageFile);
+        return;
+      }
+    });
+
+    noteContentDiv.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+        e.preventDefault();
+      }
+    });
+
+    noteContentDiv.addEventListener('drop', (e) => {
+      if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        const imageFile = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+        if (imageFile) {
+          e.preventDefault();
+          insertImageIntoEditor(imageFile);
+        }
+      }
+    });
+  }
+
+  function insertImageIntoEditor(file) {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result;
+      if (!dataUrl) return;
+
+      if (noteContentDiv) {
+        noteContentDiv.focus();
+      }
+
+      const sel = window.getSelection();
+      let range = null;
+      if (sel && sel.rangeCount > 0) {
+        range = sel.getRangeAt(0);
+        if (!noteContentDiv?.contains(range.commonAncestorContainer)) {
+          range = document.createRange();
+          range.selectNodeContents(noteContentDiv);
+          range.collapse(false);
+        }
+      } else if (noteContentDiv) {
+        range = document.createRange();
+        range.selectNodeContents(noteContentDiv);
+        range.collapse(false);
+      }
+
+      if (!range) return;
+
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = file.name || 'Pasted image';
+      img.className = 'retro-note-image';
+      img.title = file.name || 'Pasted note image';
+
+      range.deleteContents();
+      range.insertNode(img);
+
+      const spacer = document.createElement('div');
+      spacer.innerHTML = '<br>';
+      if (img.nextSibling) {
+        img.parentNode.insertBefore(spacer, img.nextSibling);
+      } else {
+        img.parentNode.appendChild(spacer);
+      }
+
+      const newRange = document.createRange();
+      newRange.setStart(spacer, 0);
+      newRange.collapse(true);
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+
+      triggerAutoSave();
+      updateStats(noteContentDiv.innerText);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  if (insertImageBtn && imageFileInput) {
+    insertImageBtn.onclick = () => imageFileInput.click();
+    imageFileInput.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) insertImageIntoEditor(file);
+      e.target.value = '';
+    };
   }
 
   if (noteTitleInput) {
@@ -796,7 +907,7 @@
     };
   }
 
-  // 10. Plaintext Export
+  // 10. Plaintext, Word (.docx), and PDF Exports
   if (exportNoteBtn) {
     exportNoteBtn.onclick = () => {
       const title = noteTitleInput ? noteTitleInput.value : 'note';
@@ -804,6 +915,8 @@
       const sec = sections.find((s) => s.id === activeSectionId);
 
       let cleanBody = rawHtml;
+      cleanBody = cleanBody.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n[Image: $1]\n');
+      cleanBody = cleanBody.replace(/<img[^>]*>/gi, '\n[Image]\n');
       cleanBody = cleanBody.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
       cleanBody = cleanBody.replace(/<br\s*\/?>/gi, '\n');
       cleanBody = cleanBody.replace(/<\/div>/gi, '\n');
@@ -824,9 +937,429 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${title.replace(/[^a-z0-9_-]/gi, '_')}.txt`;
+      a.download = `${(title || 'note').replace(/[^a-z0-9_-]/gi, '_')}.txt`;
       a.click();
       URL.revokeObjectURL(a);
+    };
+  }
+
+  // DOCX & PDF Export helpers
+  function dataUrlToUint8Array(dataUrl) {
+    const parts = dataUrl.split(',');
+    const byteString = atob(parts[1]);
+    const u8 = new Uint8Array(byteString.length);
+    for (let i = 0; i < byteString.length; i++) {
+      u8[i] = byteString.charCodeAt(i);
+    }
+    return u8;
+  }
+
+  async function prepareImageForDocx(src, naturalWidth, naturalHeight) {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const origW = img.naturalWidth || naturalWidth || 400;
+        const origH = img.naturalHeight || naturalHeight || 300;
+        const maxDocxWidth = 520;
+        let targetW = origW;
+        let targetH = origH;
+        if (targetW > maxDocxWidth) {
+          targetH = Math.round((maxDocxWidth / targetW) * targetH);
+          targetW = maxDocxWidth;
+        }
+
+        const isStandard = src.startsWith('data:image/png') || src.startsWith('data:image/jpeg') || src.startsWith('data:image/jpg');
+        if (isStandard) {
+          try {
+            resolve({ data: dataUrlToUint8Array(src), width: targetW, height: targetH });
+            return;
+          } catch {}
+        }
+
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = targetW;
+          canvas.height = targetH;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, targetW, targetH);
+          const pngUrl = canvas.toDataURL('image/png');
+          resolve({ data: dataUrlToUint8Array(pngUrl), width: targetW, height: targetH });
+        } catch {
+          try {
+            resolve({ data: dataUrlToUint8Array(src), width: targetW, height: targetH });
+          } catch {
+            resolve(null);
+          }
+        }
+      };
+      img.onerror = () => resolve(null);
+      img.src = src;
+    });
+  }
+
+  async function generateDocxBlob(title, contentHtml, sectionName) {
+    if (!window.docx) throw new Error('docx library not loaded');
+    const { Document, Packer, Paragraph, TextRun, ImageRun, ExternalHyperlink, HeadingLevel, AlignmentType, UnderlineType, BorderStyle } = window.docx;
+
+    const parser = new DOMParser();
+    const docParsed = parser.parseFromString(`<body>${contentHtml || ''}</body>`, 'text/html');
+    const body = docParsed.body;
+
+    const paragraphs = [];
+
+    async function parseInlineNodes(node, context = {}) {
+      const inlines = [];
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          const text = child.textContent;
+          if (text) {
+            inlines.push(
+              new TextRun({
+                text,
+                bold: Boolean(context.bold),
+                italics: Boolean(context.italics),
+                underline: context.underline ? { type: UnderlineType.SINGLE } : undefined,
+                strike: Boolean(context.strike),
+                font: context.font || 'Georgia',
+                size: context.size || 22,
+                color: context.color || '1a1714',
+              })
+            );
+          }
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          const tag = child.tagName.toLowerCase();
+          if (tag === 'br') {
+            inlines.push(new TextRun({ break: 1 }));
+          } else if (tag === 'b' || tag === 'strong') {
+            inlines.push(...(await parseInlineNodes(child, { ...context, bold: true })));
+          } else if (tag === 'i' || tag === 'em') {
+            inlines.push(...(await parseInlineNodes(child, { ...context, italics: true })));
+          } else if (tag === 'u') {
+            inlines.push(...(await parseInlineNodes(child, { ...context, underline: true })));
+          } else if (tag === 's' || tag === 'strike' || tag === 'del') {
+            inlines.push(...(await parseInlineNodes(child, { ...context, strike: true })));
+          } else if (tag === 'code') {
+            inlines.push(...(await parseInlineNodes(child, { ...context, font: 'Courier New', size: 20 })));
+          } else if (tag === 'a') {
+            const href = child.getAttribute('href') || '#';
+            const linkChildren = await parseInlineNodes(child, { ...context, color: '0000cc', underline: true });
+            inlines.push(
+              new ExternalHyperlink({
+                children: linkChildren.length > 0 ? linkChildren : [
+                  new TextRun({
+                    text: child.innerText || href,
+                    style: 'Hyperlink',
+                    color: '0000cc',
+                    underline: { type: UnderlineType.SINGLE },
+                    font: 'Georgia',
+                  }),
+                ],
+                link: href,
+              })
+            );
+          } else if (tag === 'img') {
+            const src = child.getAttribute('src');
+            if (src) {
+              const imgData = await prepareImageForDocx(src, child.naturalWidth || child.width, child.naturalHeight || child.height);
+              if (imgData) {
+                inlines.push(
+                  new ImageRun({
+                    data: imgData.data,
+                    transformation: { width: imgData.width, height: imgData.height },
+                  })
+                );
+              }
+            }
+          } else {
+            inlines.push(...(await parseInlineNodes(child, context)));
+          }
+        }
+      }
+      return inlines;
+    }
+
+    async function processBlock(node) {
+      const tag = node.tagName ? node.tagName.toLowerCase() : '';
+      if (tag === 'ul') {
+        const items = Array.from(node.children).filter((c) => c.tagName && c.tagName.toLowerCase() === 'li');
+        for (const li of items) {
+          const inlines = await parseInlineNodes(li);
+          paragraphs.push(new Paragraph({ bullet: { level: 0 }, children: inlines.length > 0 ? inlines : [new TextRun('')], spacing: { before: 40, after: 60, line: 320 } }));
+        }
+        return;
+      }
+      if (tag === 'ol') {
+        const items = Array.from(node.children).filter((c) => c.tagName && c.tagName.toLowerCase() === 'li');
+        let idx = 1;
+        for (const li of items) {
+          const inlines = await parseInlineNodes(li);
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({ text: `${idx}.  `, bold: true, font: 'Georgia', size: 22 }), ...inlines],
+            indent: { left: 400 },
+            spacing: { before: 40, after: 60, line: 320 }
+          }));
+          idx++;
+        }
+        return;
+      }
+      if (tag === 'blockquote') {
+        const inlines = await parseInlineNodes(node, { italics: true });
+        paragraphs.push(new Paragraph({
+          children: inlines,
+          indent: { left: 720 },
+          spacing: { before: 100, after: 100, line: 320 },
+          border: { left: { color: '8e8065', space: 10, style: BorderStyle.SINGLE, size: 12 } }
+        }));
+        return;
+      }
+      if (tag === 'hr') {
+        paragraphs.push(new Paragraph({ children: [], border: { bottom: { color: '9f9175', space: 1, style: BorderStyle.SINGLE, size: 6 } }, spacing: { before: 120, after: 120 } }));
+        return;
+      }
+      if (tag === 'img') {
+        const src = node.getAttribute('src');
+        if (src) {
+          const imgData = await prepareImageForDocx(src, node.naturalWidth || node.width, node.naturalHeight || node.height);
+          if (imgData) {
+            paragraphs.push(new Paragraph({
+              alignment: AlignmentType.CENTER,
+              children: [new ImageRun({ data: imgData.data, transformation: { width: imgData.width, height: imgData.height } })],
+              spacing: { before: 140, after: 140 }
+            }));
+          }
+        }
+        return;
+      }
+      if (/^h[1-6]$/.test(tag)) {
+        const level = parseInt(tag[1], 10);
+        const sizes = { 1: 36, 2: 30, 3: 26, 4: 24, 5: 22, 6: 20 };
+        const inlines = await parseInlineNodes(node, { bold: true, size: sizes[level] || 24 });
+        paragraphs.push(new Paragraph({
+          heading: level === 1 ? HeadingLevel.HEADING_1 : HeadingLevel.HEADING_2,
+          children: inlines,
+          spacing: { before: 200, after: 100 }
+        }));
+        return;
+      }
+      const inlines = await parseInlineNodes(node);
+      paragraphs.push(new Paragraph({
+        children: inlines.length > 0 ? inlines : [new TextRun('')],
+        spacing: { before: 60, after: 80, line: 340 }
+      }));
+    }
+
+    const children = Array.from(body.childNodes);
+    let pending = [];
+    for (const child of children) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        const t = child.textContent;
+        if (t && t.trim().length > 0) {
+          pending.push(new TextRun({ text: t, font: 'Georgia', size: 22, color: '1a1714' }));
+        }
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const tag = child.tagName.toLowerCase();
+        const isBlock = ['p', 'div', 'ul', 'ol', 'blockquote', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6'].includes(tag);
+        if (isBlock) {
+          if (pending.length > 0) {
+            paragraphs.push(new Paragraph({ children: pending, spacing: { before: 60, after: 80, line: 340 } }));
+            pending = [];
+          }
+          await processBlock(child);
+        } else {
+          pending.push(...(await parseInlineNodes(child)));
+        }
+      }
+    }
+    if (pending.length > 0) {
+      paragraphs.push(new Paragraph({ children: pending, spacing: { before: 60, after: 80, line: 340 } }));
+    }
+
+    const dateString = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+    const headerParas = [
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text: 'THE ELECTRONIC NOTEPAD (GO EDITION)', font: 'Courier New', size: 18, bold: true, color: '6f644f', characterSpacing: 40 })],
+        spacing: { before: 0, after: 40 }
+      }),
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text: `SECTION: ${(sectionName || 'General').toUpperCase()}   •   DATE: ${dateString}`, font: 'Courier New', size: 18, color: '706b60' })],
+        spacing: { before: 0, after: 120 },
+        border: { bottom: { color: '9f9175', space: 6, style: BorderStyle.SINGLE, size: 8 } }
+      }),
+      new Paragraph({
+        alignment: AlignmentType.LEFT,
+        children: [new TextRun({ text: title || 'Untitled Note', font: 'Georgia', size: 40, bold: true, color: '1a1612' })],
+        spacing: { before: 200, after: 160 },
+        border: { bottom: { color: 'b5a98e', space: 6, style: BorderStyle.SINGLE, size: 6 } }
+      }),
+    ];
+
+    const footerParas = [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [new TextRun({ text: '— End of Ledger Note —', font: 'Courier New', size: 16, italics: true, color: '9f9684' })],
+        spacing: { before: 400, after: 100 },
+        border: { top: { color: 'dcd1b3', space: 6, style: BorderStyle.DASHED, size: 6 } }
+      })
+    ];
+
+    const documentInstance = new Document({
+      sections: [{
+        properties: { page: { margin: { top: 1440, bottom: 1440, left: 1440, right: 1440 } } },
+        children: [...headerParas, ...paragraphs, ...footerParas]
+      }]
+    });
+
+    return await Packer.toBlob(documentInstance);
+  }
+
+  async function generatePdf(title, contentHtml, sectionName) {
+    const jsPDFConstructor = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+    if (!jsPDFConstructor || !window.html2canvas) {
+      throw new Error('PDF export libraries not loaded');
+    }
+
+    const dateString = new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' });
+
+    const stage = document.createElement('div');
+    stage.style.position = 'fixed';
+    stage.style.left = '-9999px';
+    stage.style.top = '0';
+    stage.style.width = '794px';
+    stage.style.backgroundColor = '#ffffff';
+    stage.style.color = '#1a1612';
+    stage.style.fontFamily = 'Georgia, "Times New Roman", Times, serif';
+    stage.style.fontSize = '14px';
+    stage.style.lineHeight = '1.8';
+    stage.style.padding = '48px 56px';
+    stage.style.boxSizing = 'border-box';
+    stage.style.zIndex = '-1000';
+
+    stage.innerHTML = `
+      <div style="border-bottom: 2px solid #6f644f; padding-bottom: 8px; margin-bottom: 20px; font-family: 'Courier New', Courier, monospace;">
+        <div style="font-size: 11px; font-weight: bold; letter-spacing: 2px; color: #8c2b2b; text-transform: uppercase;">
+          THE ELECTRONIC NOTEPAD • DESK LEDGER
+        </div>
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #554d3f; margin-top: 4px;">
+          <span><strong>FOLDER:</strong> ${sectionName || 'General'}</span>
+          <span><strong>DATE:</strong> ${dateString}</span>
+        </div>
+      </div>
+      <div style="border-bottom: 2px solid #1a1612; padding-bottom: 10px; margin-bottom: 24px;">
+        <h1 style="font-size: 26px; font-weight: bold; margin: 0; color: #1a1612; font-family: Georgia, serif; line-height: 1.3;">
+          ${title || 'Untitled Note'}
+        </h1>
+      </div>
+      <div id="pdf-body-content" style="font-size: 14px; line-height: 28px; word-break: break-word; color: #1a1714;">
+        ${contentHtml || '<p style="color: #888; font-style: italic;">(Empty note)</p>'}
+      </div>
+      <div style="margin-top: 40px; padding-top: 12px; border-top: 1px dashed #b5a98e; font-family: 'Courier New', Courier, monospace; font-size: 11px; color: #8c8270; text-align: center;">
+        — Preserved from Go + NeonDB Desk Ledger —
+      </div>
+    `;
+
+    const styleTag = document.createElement('style');
+    styleTag.textContent = `
+      #pdf-body-content a { color: #0000cc !important; text-decoration: underline !important; font-weight: 600; }
+      #pdf-body-content img { max-width: 100% !important; height: auto !important; display: block; margin: 16px auto; border: 1px solid #8e8065; box-shadow: 2px 3px 6px rgba(0,0,0,0.15); border-radius: 2px; }
+      #pdf-body-content ul, #pdf-body-content ol { margin: 12px 0 12px 24px; padding-left: 12px; }
+      #pdf-body-content li { margin-bottom: 6px; }
+      #pdf-body-content blockquote { border-left: 3px solid #8e8065; padding-left: 12px; margin: 12px 0; color: #554d3f; font-style: italic; }
+    `;
+    stage.appendChild(styleTag);
+    document.body.appendChild(stage);
+
+    try {
+      const images = Array.from(stage.querySelectorAll('img'));
+      await Promise.all(images.map((img) => new Promise((resolve) => {
+        if (img.complete) resolve();
+        else { img.onload = resolve; img.onerror = resolve; }
+      })));
+
+      const canvas = await window.html2canvas(stage, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        windowWidth: 794,
+      });
+
+      const pdf = new jsPDFConstructor('p', 'mm', 'a4');
+      const pdfWidth = 210;
+      const pdfHeight = 297;
+      const margin = 10;
+      const printableWidth = pdfWidth - margin * 2;
+      const printableHeight = pdfHeight - margin * 2;
+
+      const imgWidthPx = canvas.width;
+      const imgHeightPx = canvas.height;
+      const pageHeightPx = Math.floor((printableHeight / printableWidth) * imgWidthPx);
+
+      let renderedHeight = 0;
+      let pageIndex = 0;
+
+      while (renderedHeight < imgHeightPx) {
+        if (pageIndex > 0) pdf.addPage();
+        const chunkHeight = Math.min(pageHeightPx, imgHeightPx - renderedHeight);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = imgWidthPx;
+        pageCanvas.height = chunkHeight;
+        const pageCtx = pageCanvas.getContext('2d');
+        pageCtx.drawImage(canvas, 0, renderedHeight, imgWidthPx, chunkHeight, 0, 0, imgWidthPx, chunkHeight);
+
+        const pageImgData = pageCanvas.toDataURL('image/png');
+        const renderedHeightMm = (chunkHeight / imgWidthPx) * printableWidth;
+        pdf.addImage(pageImgData, 'PNG', margin, margin, printableWidth, renderedHeightMm);
+
+        renderedHeight += chunkHeight;
+        pageIndex++;
+      }
+
+      pdf.save(`${(title || 'note').replace(/[^a-z0-9_-]/gi, '_')}.pdf`);
+    } finally {
+      document.body.removeChild(stage);
+    }
+  }
+
+  if (exportDocxBtn) {
+    exportDocxBtn.onclick = async () => {
+      const title = noteTitleInput ? noteTitleInput.value : 'note';
+      const rawHtml = noteContentDiv ? noteContentDiv.innerHTML : '';
+      const sec = sections.find((s) => s.id === activeSectionId);
+      exportDocxBtn.textContent = '⏳ Exporting...';
+      try {
+        const blob = await generateDocxBlob(title, rawHtml, sec ? sec.name : 'General');
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${(title || 'note').replace(/[^a-z0-9_-]/gi, '_')}.docx`;
+        a.click();
+        URL.revokeObjectURL(a);
+      } catch (err) {
+        console.error('Failed to export DOCX:', err);
+        alert('Could not export Word document. Please try again.');
+      } finally {
+        exportDocxBtn.textContent = '📄 Export .docx';
+      }
+    };
+  }
+
+  if (exportPdfBtn) {
+    exportPdfBtn.onclick = async () => {
+      const title = noteTitleInput ? noteTitleInput.value : 'note';
+      const rawHtml = noteContentDiv ? noteContentDiv.innerHTML : '';
+      const sec = sections.find((s) => s.id === activeSectionId);
+      exportPdfBtn.textContent = '⏳ Exporting...';
+      try {
+        await generatePdf(title, rawHtml, sec ? sec.name : 'General');
+      } catch (err) {
+        console.error('Failed to export PDF:', err);
+        alert('Could not export PDF document. Please try again.');
+      } finally {
+        exportPdfBtn.textContent = '📑 Export .pdf';
+      }
     };
   }
 

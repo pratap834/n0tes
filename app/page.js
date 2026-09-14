@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { exportToDocx, exportToPdf } from '../lib/exportUtils';
 
 export default function NotepadApp() {
   const [sections, setSections] = useState([]);
@@ -15,6 +16,7 @@ export default function NotepadApp() {
   const [isNeon, setIsNeon] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Link & Selection State
   const [savedRange, setSavedRange] = useState(null);
@@ -33,6 +35,7 @@ export default function NotepadApp() {
   const titleInputRef = useRef(null);
   const editorRef = useRef(null);
   const linkInputRef = useRef(null);
+  const imageInputRef = useRef(null);
 
   const activeNoteIdRef = useRef(activeNoteId);
   const activeNoteTitleRef = useRef(activeNoteTitle);
@@ -619,12 +622,125 @@ export default function NotepadApp() {
     handleEditorInput();
   };
 
-  // 12. Plaintext Export / Download
+  // 12. Image Insertion & Handling (Evernote-Style Direct Paste & Drag/Drop)
+  const insertImageIntoEditor = useCallback((file) => {
+    if (!file || !file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result;
+      if (!dataUrl) return;
+
+      if (editorRef.current) {
+        editorRef.current.focus();
+      }
+
+      const sel = window.getSelection();
+      let range = null;
+      if (sel && sel.rangeCount > 0) {
+        range = sel.getRangeAt(0);
+        if (!editorRef.current?.contains(range.commonAncestorContainer)) {
+          range = document.createRange();
+          range.selectNodeContents(editorRef.current);
+          range.collapse(false);
+        }
+      } else if (editorRef.current) {
+        range = document.createRange();
+        range.selectNodeContents(editorRef.current);
+        range.collapse(false);
+      }
+
+      if (!range) return;
+
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = file.name || 'Pasted image';
+      img.className = 'retro-note-image';
+      img.title = file.name || 'Pasted note image';
+
+      range.deleteContents();
+      range.insertNode(img);
+
+      // Add a trailing line break spacer so user can immediately type beneath the image
+      const spacer = document.createElement('div');
+      spacer.innerHTML = '<br>';
+      if (img.nextSibling) {
+        img.parentNode.insertBefore(spacer, img.nextSibling);
+      } else {
+        img.parentNode.appendChild(spacer);
+      }
+
+      // Move caret to the line after the image
+      const newRange = document.createRange();
+      newRange.setStart(spacer, 0);
+      newRange.collapse(true);
+      if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(newRange);
+      }
+
+      // Seamlessly update note state and queue debounced autosave
+      handleEditorInput();
+    };
+    reader.readAsDataURL(file);
+  }, []);
+
+  const handleEditorPaste = (e) => {
+    const clipboardData = e.clipboardData;
+    if (!clipboardData) return;
+
+    const items = Array.from(clipboardData.items || []);
+    const imageItem = items.find((it) => it.type.startsWith('image/'));
+    if (imageItem) {
+      e.preventDefault();
+      const file = imageItem.getAsFile();
+      if (file) {
+        insertImageIntoEditor(file);
+      }
+      return;
+    }
+
+    const files = Array.from(clipboardData.files || []);
+    const imageFile = files.find((f) => f.type.startsWith('image/'));
+    if (imageFile) {
+      e.preventDefault();
+      insertImageIntoEditor(imageFile);
+      return;
+    }
+  };
+
+  const handleDragOver = (e) => {
+    if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+      e.preventDefault();
+    }
+  };
+
+  const handleDrop = (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const imageFile = Array.from(e.dataTransfer.files).find((f) => f.type.startsWith('image/'));
+      if (imageFile) {
+        e.preventDefault();
+        insertImageIntoEditor(imageFile);
+      }
+    }
+  };
+
+  const handleImageFileSelect = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      insertImageIntoEditor(file);
+    }
+    e.target.value = '';
+  };
+
+  // 13. Document Export Functions (.txt, .docx, .pdf)
   const handleExportText = () => {
     if (!activeNoteTitle && !activeNoteContent) return;
     const activeSection = sections.find((s) => s.id === activeSectionId);
     
     let cleanBody = activeNoteContent || '';
+    // Preserve image markers in plaintext export
+    cleanBody = cleanBody.replace(/<img[^>]*alt="([^"]*)"[^>]*>/gi, '\n[Image: $1]\n');
+    cleanBody = cleanBody.replace(/<img[^>]*>/gi, '\n[Image]\n');
     cleanBody = cleanBody.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>(.*?)<\/a>/gi, '$2 ($1)');
     cleanBody = cleanBody.replace(/<br\s*\/?>/gi, '\n');
     cleanBody = cleanBody.replace(/<\/div>/gi, '\n');
@@ -648,6 +764,48 @@ export default function NotepadApp() {
     link.download = `${(activeNoteTitle || 'note').replace(/[^a-z0-9_-]/gi, '_')}.txt`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportDocxClick = async () => {
+    if (!activeNoteTitle && !activeNoteContent) return;
+    const activeSection = sections.find((s) => s.id === activeSectionId);
+    setIsExporting(true);
+    try {
+      await exportToDocx(
+        {
+          title: activeNoteTitle,
+          content: activeNoteContent,
+          updated_at: new Date().toISOString(),
+        },
+        activeSection?.name || 'General'
+      );
+    } catch (err) {
+      console.error('Failed to export Word document:', err);
+      alert('Could not export Word document. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleExportPdfClick = async () => {
+    if (!activeNoteTitle && !activeNoteContent) return;
+    const activeSection = sections.find((s) => s.id === activeSectionId);
+    setIsExporting(true);
+    try {
+      await exportToPdf(
+        {
+          title: activeNoteTitle,
+          content: activeNoteContent,
+          updated_at: new Date().toISOString(),
+        },
+        activeSection?.name || 'General'
+      );
+    } catch (err) {
+      console.error('Failed to export PDF document:', err);
+      alert('Could not export PDF document. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handlePrint = () => {
@@ -892,6 +1050,24 @@ export default function NotepadApp() {
                   📥 Export .txt
                 </button>
                 <button
+                  id="export-docx-btn"
+                  className="retro-btn small"
+                  onClick={handleExportDocxClick}
+                  disabled={!activeNoteId || isExporting}
+                  title="Export note as a formatted Word Document (.docx)"
+                >
+                  {isExporting ? '⏳ Exporting...' : '📄 Export .docx'}
+                </button>
+                <button
+                  id="export-pdf-btn"
+                  className="retro-btn small"
+                  onClick={handleExportPdfClick}
+                  disabled={!activeNoteId || isExporting}
+                  title="Export note as a high-fidelity PDF (.pdf)"
+                >
+                  {isExporting ? '⏳ Exporting...' : '📑 Export .pdf'}
+                </button>
+                <button
                   id="print-note-btn"
                   className="retro-btn small"
                   onClick={handlePrint}
@@ -980,6 +1156,24 @@ export default function NotepadApp() {
                   • List
                 </button>
 
+                <div className="format-divider"></div>
+
+                <button
+                  id="insert-image-btn"
+                  className="format-btn"
+                  onClick={() => imageInputRef.current?.click()}
+                  title="Insert Image (or paste directly via Ctrl+V)"
+                >
+                  🖼️ Image
+                </button>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/*"
+                  style={{ display: 'none' }}
+                  onChange={handleImageFileSelect}
+                />
+
                 <span style={{ fontSize: '11px', color: '#7a7060', marginLeft: 'auto', fontStyle: 'italic' }}>
                   🛡️ Auto-saves continuously &amp; on page close
                 </span>
@@ -999,17 +1193,20 @@ export default function NotepadApp() {
                   onChange={handleTitleChange}
                 />
 
-                {/* Contenteditable Rich Pad with Hyperlinks */}
+                {/* Contenteditable Rich Pad with Hyperlinks & Image Pasting */}
                 <div
                   ref={editorRef}
                   id="note-content"
                   className="note-content-editable"
                   contentEditable
                   suppressContentEditableWarning
-                  data-placeholder="Start writing your thoughts here... Select text and press Ctrl+K to attach a hyperlink."
+                  data-placeholder="Start writing your thoughts here... Paste images directly (Ctrl+V) or select text and press Ctrl+K to attach a hyperlink."
                   onInput={handleEditorInput}
                   onKeyDown={handleEditorKeyDown}
                   onClick={handleEditorClick}
+                  onPaste={handleEditorPaste}
+                  onDragOver={handleDragOver}
+                  onDrop={handleDrop}
                   spellCheck={false}
                 />
 

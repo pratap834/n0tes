@@ -675,6 +675,25 @@ html, body {
   color: #551a8b !important;
 }
 
+/* Authentic Pasted Stationery Images (Evernote-style) */
+.retro-note-image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 14px auto;
+  border: 2px solid #8e8065;
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  background-color: #ffffff;
+  transition: box-shadow 0.15s, border-color 0.15s;
+  cursor: pointer;
+}
+
+.retro-note-image:hover {
+  border-color: #55442e;
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.28);
+}
+
 /* Floating Retro Link Bubble Popover */
 .retro-link-popover {
   position: absolute;
@@ -941,5 +960,12 @@ html, body {
   }
   .note-title-input {
     border-bottom: 2px solid #000 !important;
+  }
+  .retro-note-image {
+    max-width: 100% !important;
+    height: auto !important;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    margin: 10px auto !important;
   }
 }
