@@ -687,11 +687,119 @@ html, body {
   background-color: #ffffff;
   transition: box-shadow 0.15s, border-color 0.15s;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .retro-note-image:hover {
   border-color: #55442e;
   box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.28);
+}
+
+.retro-note-image.selected {
+  outline: 2px dashed #423522;
+  outline-offset: 3px;
+}
+
+/* Word-style Interactive Image Resizer */
+.image-resize-overlay {
+  position: absolute;
+  pointer-events: none;
+  border: 2px solid #503d2e;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85), 0 3px 10px rgba(0, 0, 0, 0.35);
+  z-index: 120;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background-color: #fffef2;
+  border: 1.5px solid #3c2d20;
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  border-radius: 1px;
+}
+
+.resize-handle:hover {
+  background-color: #e8debe;
+  border-color: #1a1612;
+  transform: scale(1.25);
+}
+
+.resize-handle.nw { top: -6px; left: -6px; cursor: nwse-resize; }
+.resize-handle.ne { top: -6px; right: -6px; cursor: nesw-resize; }
+.resize-handle.se { bottom: -6px; right: -6px; cursor: nwse-resize; }
+.resize-handle.sw { bottom: -6px; left: -6px; cursor: nesw-resize; }
+.resize-handle.n  { top: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+.resize-handle.s  { bottom: -6px; left: calc(50% - 5px); cursor: ns-resize; }
+.resize-handle.e  { right: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+.resize-handle.w  { left: -6px; top: calc(50% - 5px); cursor: ew-resize; }
+
+/* Floating Image Format Toolbar */
+.image-resize-toolbar {
+  position: absolute;
+  top: -38px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ede6d6;
+  border-top: 2px solid #ffffff;
+  border-left: 2px solid #ffffff;
+  border-right: 2px solid #635b4b;
+  border-bottom: 2px solid #635b4b;
+  box-shadow: 2px 3px 8px rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  pointer-events: auto;
+  white-space: nowrap;
+  z-index: 130;
+}
+
+.img-tool-badge {
+  font-family: var(--font-typewriter);
+  font-size: 10px;
+  color: #554d3f;
+  background: #dfd7c2;
+  padding: 1px 5px;
+  border: 1px inset #d0c8b0;
+  margin-right: 4px;
+}
+
+.img-tool-btn {
+  background: #eae4d5;
+  border-top: 1px solid #fff;
+  border-left: 1px solid #fff;
+  border-right: 1px solid #777;
+  border-bottom: 1px solid #777;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: bold;
+  color: #2b2723;
+  cursor: pointer;
+  user-select: none;
+}
+
+.img-tool-btn:hover {
+  background: #fbf5e7;
+}
+
+.img-tool-btn:active {
+  border-top: 1px solid #777;
+  border-left: 1px solid #777;
+  border-right: 1px solid #fff;
+  border-bottom: 1px solid #fff;
+}
+
+.img-tool-btn.danger {
+  color: #8c2b2b;
+}
+
+.img-tool-btn.danger:hover {
+  background: #fae6e4;
 }
 
 /* Floating Retro Link Bubble Popover */

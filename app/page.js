@@ -25,6 +25,10 @@ export default function NotepadApp() {
   const [linkDisplayText, setLinkDisplayText] = useState('');
   const [activeHoverLink, setActiveHoverLink] = useState(null); // { url, rect, node }
 
+  // Word-style Image Resizing State
+  const [selectedImageNode, setSelectedImageNode] = useState(null);
+  const [selectedImageRect, setSelectedImageRect] = useState(null); // { top, left, width, height }
+
   // Modal State
   const [modalType, setModalType] = useState(null); // 'new-section' | 'rename-section' | 'delete-section' | 'delete-note' | 'insert-link'
   const [modalInputValue, setModalInputValue] = useState('');
@@ -34,6 +38,7 @@ export default function NotepadApp() {
   const saveTimeoutRef = useRef(null);
   const titleInputRef = useRef(null);
   const editorRef = useRef(null);
+  const notepadSheetRef = useRef(null);
   const linkInputRef = useRef(null);
   const imageInputRef = useRef(null);
 
@@ -284,6 +289,8 @@ export default function NotepadApp() {
       editorRef.current.innerHTML = note.content || '';
     }
     setActiveHoverLink(null);
+    setSelectedImageNode(null);
+    setSelectedImageRect(null);
     setSaveStatus('idle');
     setLastSavedTime(new Date(note.updated_at).toLocaleTimeString());
   };
@@ -594,9 +601,228 @@ export default function NotepadApp() {
     }
   };
 
-  // Handle clicking on links inside the editor
+  // 12. Word-Style Interactive Image Resizing & Manipulation
+  const updateResizeOverlay = useCallback((imgNode = selectedImageNode) => {
+    if (!imgNode || !notepadSheetRef.current) {
+      setSelectedImageRect(null);
+      return;
+    }
+    const sheetRect = notepadSheetRef.current.getBoundingClientRect();
+    const imgRect = imgNode.getBoundingClientRect();
+    setSelectedImageRect({
+      top: imgRect.top - sheetRect.top,
+      left: imgRect.left - sheetRect.left,
+      width: imgRect.width,
+      height: imgRect.height,
+    });
+  }, [selectedImageNode]);
+
+  useEffect(() => {
+    if (!selectedImageNode) {
+      setSelectedImageRect(null);
+      return;
+    }
+
+    const handleScrollOrResize = () => {
+      updateResizeOverlay(selectedImageNode);
+    };
+
+    window.addEventListener('resize', handleScrollOrResize);
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    return () => {
+      window.removeEventListener('resize', handleScrollOrResize);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+    };
+  }, [selectedImageNode, updateResizeOverlay]);
+
+  useEffect(() => {
+    const handleGlobalMouseDown = (e) => {
+      if (!selectedImageNode) return;
+
+      if (e.target.closest('.image-resize-overlay') || e.target.closest('.image-resize-toolbar')) {
+        return;
+      }
+      if (e.target === selectedImageNode || (e.target.tagName === 'IMG' && editorRef.current?.contains(e.target))) {
+        return;
+      }
+
+      selectedImageNode.classList.remove('selected');
+      setSelectedImageNode(null);
+      setSelectedImageRect(null);
+    };
+
+    document.addEventListener('mousedown', handleGlobalMouseDown);
+    return () => {
+      document.removeEventListener('mousedown', handleGlobalMouseDown);
+    };
+  }, [selectedImageNode]);
+
+  const deleteSelectedImage = useCallback(() => {
+    if (!selectedImageNode) return;
+    const img = selectedImageNode;
+    img.classList.remove('selected');
+    setSelectedImageNode(null);
+    setSelectedImageRect(null);
+    if (img.parentNode) {
+      img.parentNode.removeChild(img);
+    }
+    handleEditorInput();
+  }, [selectedImageNode, handleEditorInput]);
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!selectedImageNode) return;
+
+      if (e.key === 'Escape') {
+        selectedImageNode.classList.remove('selected');
+        setSelectedImageNode(null);
+        setSelectedImageRect(null);
+        return;
+      }
+
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        deleteSelectedImage();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedImageNode, deleteSelectedImage]);
+
+  const applyImageSizePreset = (pct) => {
+    if (!selectedImageNode || !editorRef.current) return;
+    const editorWidth = editorRef.current.clientWidth || 650;
+    const newWidth = Math.round((editorWidth - 20) * (pct / 100));
+    selectedImageNode.style.width = `${newWidth}px`;
+    selectedImageNode.style.height = 'auto';
+    selectedImageNode.setAttribute('width', newWidth);
+    updateResizeOverlay(selectedImageNode);
+    handleEditorInput();
+  };
+
+  const resetImageSize = () => {
+    if (!selectedImageNode) return;
+    if (selectedImageNode.naturalWidth) {
+      const maxW = (editorRef.current?.clientWidth || 700) - 20;
+      const targetW = Math.min(selectedImageNode.naturalWidth, maxW);
+      selectedImageNode.style.width = `${targetW}px`;
+      selectedImageNode.style.height = 'auto';
+      selectedImageNode.setAttribute('width', targetW);
+    } else {
+      selectedImageNode.style.width = '100%';
+      selectedImageNode.style.height = 'auto';
+      selectedImageNode.removeAttribute('width');
+    }
+    updateResizeOverlay(selectedImageNode);
+    handleEditorInput();
+  };
+
+  const applyImageAlign = (alignment) => {
+    if (!selectedImageNode) return;
+    selectedImageNode.style.display = 'block';
+    if (alignment === 'left') {
+      selectedImageNode.style.marginLeft = '0';
+      selectedImageNode.style.marginRight = 'auto';
+    } else if (alignment === 'center') {
+      selectedImageNode.style.marginLeft = 'auto';
+      selectedImageNode.style.marginRight = 'auto';
+    } else if (alignment === 'right') {
+      selectedImageNode.style.marginLeft = 'auto';
+      selectedImageNode.style.marginRight = '0';
+    }
+    updateResizeOverlay(selectedImageNode);
+    handleEditorInput();
+  };
+
+  const handleResizeMouseDown = (e, dir) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!selectedImageNode || !notepadSheetRef.current) return;
+
+    const img = selectedImageNode;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = img.offsetWidth || img.getBoundingClientRect().width;
+    const startHeight = img.offsetHeight || img.getBoundingClientRect().height;
+    const aspectRatio = (startWidth > 0 && startHeight > 0) ? (startWidth / startHeight) : 1;
+
+    const maxAllowedWidth = Math.max(200, (editorRef.current?.clientWidth || 700) - 10);
+    const minWidth = 60;
+
+    const onMouseMove = (moveEvent) => {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      if (dir === 'se') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'sw') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 'ne') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'nw') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 'e') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'w') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 's') {
+        newHeight = startHeight + deltaY;
+        newWidth = newHeight * aspectRatio;
+      } else if (dir === 'n') {
+        newHeight = startHeight - deltaY;
+        newWidth = newHeight * aspectRatio;
+      }
+
+      newWidth = Math.max(minWidth, Math.min(maxAllowedWidth, newWidth));
+
+      img.style.width = `${Math.round(newWidth)}px`;
+      img.style.height = 'auto';
+      img.setAttribute('width', Math.round(newWidth));
+
+      if (notepadSheetRef.current) {
+        const sheetRect = notepadSheetRef.current.getBoundingClientRect();
+        const imgRect = img.getBoundingClientRect();
+        setSelectedImageRect({
+          top: imgRect.top - sheetRect.top,
+          left: imgRect.left - sheetRect.left,
+          width: imgRect.width,
+          height: imgRect.height,
+        });
+      }
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+
+      if (notepadSheetRef.current && selectedImageNode) {
+        const sheetRect = notepadSheetRef.current.getBoundingClientRect();
+        const imgRect = selectedImageNode.getBoundingClientRect();
+        setSelectedImageRect({
+          top: imgRect.top - sheetRect.top,
+          left: imgRect.left - sheetRect.left,
+          width: imgRect.width,
+          height: imgRect.height,
+        });
+      }
+      handleEditorInput();
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  // Handle clicking on links or images inside the editor
   const handleEditorClick = (e) => {
     const targetAnchor = e.target.closest('a');
+    const targetImage = e.target.closest('img');
+
     if (targetAnchor) {
       if (e.ctrlKey || e.metaKey) {
         window.open(targetAnchor.href, '_blank', 'noopener,noreferrer');
@@ -611,8 +837,31 @@ export default function NotepadApp() {
         top: rect.bottom - editorRect.top + 5,
         left: Math.max(10, rect.left - editorRect.left),
       });
+      if (selectedImageNode) {
+        selectedImageNode.classList.remove('selected');
+        setSelectedImageNode(null);
+        setSelectedImageRect(null);
+      }
+      return;
     } else {
       setActiveHoverLink(null);
+    }
+
+    if (targetImage && editorRef.current?.contains(targetImage)) {
+      e.stopPropagation();
+      if (selectedImageNode && selectedImageNode !== targetImage) {
+        selectedImageNode.classList.remove('selected');
+      }
+      targetImage.classList.add('selected');
+      setSelectedImageNode(targetImage);
+      updateResizeOverlay(targetImage);
+      return;
+    }
+
+    if (selectedImageNode) {
+      selectedImageNode.classList.remove('selected');
+      setSelectedImageNode(null);
+      setSelectedImageRect(null);
     }
   };
 
@@ -622,7 +871,7 @@ export default function NotepadApp() {
     handleEditorInput();
   };
 
-  // 12. Image Insertion & Handling (Evernote-Style Direct Paste & Drag/Drop)
+  // 13. Image Insertion & Handling (Evernote-Style Direct Paste & Drag/Drop)
   const insertImageIntoEditor = useCallback((file) => {
     if (!file || !file.type.startsWith('image/')) return;
     const reader = new FileReader();
@@ -680,9 +929,18 @@ export default function NotepadApp() {
 
       // Seamlessly update note state and queue debounced autosave
       handleEditorInput();
+
+      // Auto-select newly inserted image so resize handles immediately appear
+      setTimeout(() => {
+        if (img && editorRef.current?.contains(img)) {
+          img.classList.add('selected');
+          setSelectedImageNode(img);
+          updateResizeOverlay(img);
+        }
+      }, 50);
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [handleEditorInput, updateResizeOverlay]);
 
   const handleEditorPaste = (e) => {
     const clipboardData = e.clipboardData;
@@ -1182,7 +1440,7 @@ export default function NotepadApp() {
 
             {/* Ruled Yellow Notepad Paper Sheet */}
             {activeNoteId ? (
-              <div className="notepad-sheet" style={{ position: 'relative' }}>
+              <div ref={notepadSheetRef} className="notepad-sheet" style={{ position: 'relative' }}>
                 <input
                   ref={titleInputRef}
                   id="note-title"
@@ -1259,6 +1517,116 @@ export default function NotepadApp() {
                     >
                       ✕ Unlink
                     </button>
+                  </div>
+                )}
+
+                {/* Word-style Interactive Image Resizer Overlay */}
+                {selectedImageRect && selectedImageNode && (
+                  <div
+                    className="image-resize-overlay"
+                    style={{
+                      top: `${selectedImageRect.top}px`,
+                      left: `${selectedImageRect.left}px`,
+                      width: `${selectedImageRect.width}px`,
+                      height: `${selectedImageRect.height}px`,
+                    }}
+                  >
+                    {/* Floating Word-style Format Toolbar */}
+                    <div
+                      className="image-resize-toolbar"
+                      style={{
+                        top: selectedImageRect.top < 45 ? '100%' : '-38px',
+                        marginTop: selectedImageRect.top < 45 ? '6px' : '0',
+                      }}
+                    >
+                      <span className="img-tool-badge">
+                        {Math.round(selectedImageRect.width)} × {Math.round(selectedImageRect.height)} px
+                      </span>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageSizePreset(25)}
+                        title="Resize to 25% width"
+                      >
+                        25%
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageSizePreset(50)}
+                        title="Resize to 50% width"
+                      >
+                        50%
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageSizePreset(75)}
+                        title="Resize to 75% width"
+                      >
+                        75%
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageSizePreset(100)}
+                        title="Resize to 100% full width"
+                      >
+                        100%
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={resetImageSize}
+                        title="Restore original natural dimensions"
+                      >
+                        Original
+                      </button>
+                      <span style={{ color: '#aaa', margin: '0 2px' }}>|</span>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageAlign('left')}
+                        title="Align left"
+                      >
+                        ⬅ Left
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageAlign('center')}
+                        title="Align center"
+                      >
+                        ↔ Center
+                      </button>
+                      <button
+                        type="button"
+                        className="img-tool-btn"
+                        onClick={() => applyImageAlign('right')}
+                        title="Align right"
+                      >
+                        ➡ Right
+                      </button>
+                      <span style={{ color: '#aaa', margin: '0 2px' }}>|</span>
+                      <button
+                        type="button"
+                        className="img-tool-btn danger"
+                        onClick={deleteSelectedImage}
+                        title="Delete image (or press Delete key)"
+                      >
+                        🗑️
+                      </button>
+                    </div>
+
+                    {/* 8 Word-style Resize Handles */}
+                    <div className="resize-handle nw" onMouseDown={(e) => handleResizeMouseDown(e, 'nw')} />
+                    <div className="resize-handle n"  onMouseDown={(e) => handleResizeMouseDown(e, 'n')} />
+                    <div className="resize-handle ne" onMouseDown={(e) => handleResizeMouseDown(e, 'ne')} />
+                    <div className="resize-handle e"  onMouseDown={(e) => handleResizeMouseDown(e, 'e')} />
+                    <div className="resize-handle se" onMouseDown={(e) => handleResizeMouseDown(e, 'se')} />
+                    <div className="resize-handle s"  onMouseDown={(e) => handleResizeMouseDown(e, 's')} />
+                    <div className="resize-handle sw" onMouseDown={(e) => handleResizeMouseDown(e, 'sw')} />
+                    <div className="resize-handle w"  onMouseDown={(e) => handleResizeMouseDown(e, 'w')} />
                   </div>
                 )}
               </div>

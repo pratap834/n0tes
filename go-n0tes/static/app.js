@@ -330,6 +330,7 @@
       if (saveIndicator) saveIndicator.textContent = '';
       updateStats('');
       hideLinkPopover();
+      deselectImage();
       return;
     }
 
@@ -350,6 +351,7 @@
     setSaveStatus('saved', new Date(note.updated_at).toLocaleTimeString());
     updateStats(noteContentDiv ? noteContentDiv.innerText : '');
     hideLinkPopover();
+    deselectImage();
     renderNotesList();
   }
 
@@ -655,21 +657,284 @@
     triggerAutoSave();
   }
 
-  // Handle clicking on links inside the note
+  // Word-Style Image Resizer for Go Edition
+  let selectedImageNode = null;
+  let resizeOverlayEl = null;
+
+  function createResizeOverlay() {
+    if (resizeOverlayEl) return resizeOverlayEl;
+    const container = document.getElementById('notepad-container');
+    if (!container) return null;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'image-resize-overlay';
+    overlay.style.display = 'none';
+
+    overlay.innerHTML = `
+      <div class="image-resize-toolbar">
+        <span class="img-tool-badge" id="img-dim-badge">0 × 0 px</span>
+        <button type="button" class="img-tool-btn" data-preset="25" title="Resize to 25% width">25%</button>
+        <button type="button" class="img-tool-btn" data-preset="50" title="Resize to 50% width">50%</button>
+        <button type="button" class="img-tool-btn" data-preset="75" title="Resize to 75% width">75%</button>
+        <button type="button" class="img-tool-btn" data-preset="100" title="Resize to 100% full width">100%</button>
+        <button type="button" class="img-tool-btn" id="img-reset-btn" title="Restore original natural dimensions">Original</button>
+        <span style="color: #aaa; margin: 0 2px;">|</span>
+        <button type="button" class="img-tool-btn" data-align="left" title="Align left">⬅ Left</button>
+        <button type="button" class="img-tool-btn" data-align="center" title="Align center">↔ Center</button>
+        <button type="button" class="img-tool-btn" data-align="right" title="Align right">➡ Right</button>
+        <span style="color: #aaa; margin: 0 2px;">|</span>
+        <button type="button" class="img-tool-btn danger" id="img-delete-btn" title="Delete image">🗑️</button>
+      </div>
+      <div class="resize-handle nw" data-dir="nw"></div>
+      <div class="resize-handle n" data-dir="n"></div>
+      <div class="resize-handle ne" data-dir="ne"></div>
+      <div class="resize-handle e" data-dir="e"></div>
+      <div class="resize-handle se" data-dir="se"></div>
+      <div class="resize-handle s" data-dir="s"></div>
+      <div class="resize-handle sw" data-dir="sw"></div>
+      <div class="resize-handle w" data-dir="w"></div>
+    `;
+
+    container.appendChild(overlay);
+    resizeOverlayEl = overlay;
+
+    // Sizing Presets
+    overlay.querySelectorAll('[data-preset]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (!selectedImageNode || !noteContentDiv) return;
+        const pct = parseInt(btn.getAttribute('data-preset'), 10);
+        const w = Math.round((noteContentDiv.clientWidth - 20) * (pct / 100));
+        selectedImageNode.style.width = w + 'px';
+        selectedImageNode.style.height = 'auto';
+        selectedImageNode.setAttribute('width', w);
+        updateResizeOverlay();
+        triggerAutoSave();
+      };
+    });
+
+    const resetBtn = overlay.querySelector('#img-reset-btn');
+    if (resetBtn) {
+      resetBtn.onclick = (e) => {
+        e.stopPropagation();
+        if (!selectedImageNode) return;
+        if (selectedImageNode.naturalWidth) {
+          const maxW = (noteContentDiv?.clientWidth || 700) - 20;
+          const targetW = Math.min(selectedImageNode.naturalWidth, maxW);
+          selectedImageNode.style.width = targetW + 'px';
+          selectedImageNode.style.height = 'auto';
+          selectedImageNode.setAttribute('width', targetW);
+        } else {
+          selectedImageNode.style.width = '100%';
+          selectedImageNode.style.height = 'auto';
+          selectedImageNode.removeAttribute('width');
+        }
+        updateResizeOverlay();
+        triggerAutoSave();
+      };
+    }
+
+    // Alignment
+    overlay.querySelectorAll('[data-align]').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (!selectedImageNode) return;
+        const align = btn.getAttribute('data-align');
+        selectedImageNode.style.display = 'block';
+        if (align === 'left') {
+          selectedImageNode.style.marginLeft = '0';
+          selectedImageNode.style.marginRight = 'auto';
+        } else if (align === 'center') {
+          selectedImageNode.style.marginLeft = 'auto';
+          selectedImageNode.style.marginRight = 'auto';
+        } else if (align === 'right') {
+          selectedImageNode.style.marginLeft = 'auto';
+          selectedImageNode.style.marginRight = '0';
+        }
+        updateResizeOverlay();
+        triggerAutoSave();
+      };
+    });
+
+    // Delete
+    const delBtn = overlay.querySelector('#img-delete-btn');
+    if (delBtn) {
+      delBtn.onclick = (e) => {
+        e.stopPropagation();
+        deleteSelectedImage();
+      };
+    }
+
+    // Handles
+    overlay.querySelectorAll('.resize-handle').forEach((handle) => {
+      handle.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const dir = handle.getAttribute('data-dir');
+        startResizeDrag(e, dir);
+      });
+    });
+
+    return overlay;
+  }
+
+  function updateResizeOverlay() {
+    if (!selectedImageNode || !resizeOverlayEl) return;
+    const container = document.getElementById('notepad-container');
+    if (!container) return;
+
+    const sheetRect = container.getBoundingClientRect();
+    const imgRect = selectedImageNode.getBoundingClientRect();
+
+    const top = imgRect.top - sheetRect.top;
+    const left = imgRect.left - sheetRect.left;
+    const width = imgRect.width;
+    const height = imgRect.height;
+
+    resizeOverlayEl.style.top = top + 'px';
+    resizeOverlayEl.style.left = left + 'px';
+    resizeOverlayEl.style.width = width + 'px';
+    resizeOverlayEl.style.height = height + 'px';
+    resizeOverlayEl.style.display = 'block';
+
+    const badge = resizeOverlayEl.querySelector('#img-dim-badge');
+    if (badge) {
+      badge.textContent = `${Math.round(width)} × ${Math.round(height)} px`;
+    }
+
+    const toolbar = resizeOverlayEl.querySelector('.image-resize-toolbar');
+    if (toolbar) {
+      if (top < 45) {
+        toolbar.style.top = '100%';
+        toolbar.style.marginTop = '6px';
+      } else {
+        toolbar.style.top = '-38px';
+        toolbar.style.marginTop = '0';
+      }
+    }
+  }
+
+  function selectImage(img) {
+    if (selectedImageNode && selectedImageNode !== img) {
+      selectedImageNode.classList.remove('selected');
+    }
+    selectedImageNode = img;
+    img.classList.add('selected');
+    createResizeOverlay();
+    updateResizeOverlay();
+  }
+
+  function deselectImage() {
+    if (selectedImageNode) {
+      selectedImageNode.classList.remove('selected');
+      selectedImageNode = null;
+    }
+    if (resizeOverlayEl) {
+      resizeOverlayEl.style.display = 'none';
+    }
+  }
+
+  function deleteSelectedImage() {
+    if (!selectedImageNode) return;
+    const img = selectedImageNode;
+    deselectImage();
+    if (img.parentNode) {
+      img.parentNode.removeChild(img);
+    }
+    triggerAutoSave();
+    if (noteContentDiv) {
+      updateStats(noteContentDiv.innerText);
+    }
+  }
+
+  function startResizeDrag(e, dir) {
+    if (!selectedImageNode) return;
+    const container = document.getElementById('notepad-container');
+    if (!container) return;
+
+    const img = selectedImageNode;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startWidth = img.offsetWidth || img.getBoundingClientRect().width;
+    const startHeight = img.offsetHeight || img.getBoundingClientRect().height;
+    const aspectRatio = (startWidth > 0 && startHeight > 0) ? (startWidth / startHeight) : 1;
+    const maxAllowedWidth = Math.max(200, (noteContentDiv?.clientWidth || 700) - 10);
+    const minWidth = 60;
+
+    function onMouseMove(moveEvent) {
+      moveEvent.preventDefault();
+      const deltaX = moveEvent.clientX - startX;
+      const deltaY = moveEvent.clientY - startY;
+
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      if (dir === 'se') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'sw') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 'ne') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'nw') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 'e') {
+        newWidth = startWidth + deltaX;
+      } else if (dir === 'w') {
+        newWidth = startWidth - deltaX;
+      } else if (dir === 's') {
+        newHeight = startHeight + deltaY;
+        newWidth = newHeight * aspectRatio;
+      } else if (dir === 'n') {
+        newHeight = startHeight - deltaY;
+        newWidth = newHeight * aspectRatio;
+      }
+
+      newWidth = Math.max(minWidth, Math.min(maxAllowedWidth, newWidth));
+
+      img.style.width = Math.round(newWidth) + 'px';
+      img.style.height = 'auto';
+      img.setAttribute('width', Math.round(newWidth));
+
+      updateResizeOverlay();
+    }
+
+    function onMouseUp() {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      updateResizeOverlay();
+      triggerAutoSave();
+    }
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }
+
+  // Handle clicking on links or images inside the note
   if (noteContentDiv) {
     noteContentDiv.addEventListener('click', (e) => {
       const anchor = e.target.closest('a');
+      const targetImg = e.target.closest('img');
+
       if (anchor) {
-        // Direct click with Ctrl/Cmd opens link
         if (e.ctrlKey || e.metaKey) {
           window.open(anchor.href, '_blank', 'noopener,noreferrer');
           return;
         }
         e.preventDefault();
+        deselectImage();
         showLinkPopover(anchor);
+        return;
       } else {
         hideLinkPopover();
       }
+
+      if (targetImg && noteContentDiv.contains(targetImg)) {
+        e.stopPropagation();
+        selectImage(targetImg);
+        return;
+      }
+
+      deselectImage();
     });
 
     noteContentDiv.addEventListener('input', () => {
@@ -723,6 +988,35 @@
       }
     });
   }
+
+  // Deselect image on global clicks outside
+  document.addEventListener('mousedown', (e) => {
+    if (!selectedImageNode) return;
+    if (e.target.closest('.image-resize-overlay') || e.target.closest('.image-resize-toolbar')) {
+      return;
+    }
+    if (e.target === selectedImageNode || (e.target.tagName === 'IMG' && noteContentDiv?.contains(e.target))) {
+      return;
+    }
+    deselectImage();
+  });
+
+  // Global keydown for Escape / Delete / Backspace
+  window.addEventListener('keydown', (e) => {
+    if (!selectedImageNode) return;
+    if (e.key === 'Escape') {
+      deselectImage();
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      deleteSelectedImage();
+    }
+  });
+
+  // Window resize/scroll keeps overlay attached to image
+  window.addEventListener('resize', updateResizeOverlay);
+  window.addEventListener('scroll', updateResizeOverlay, true);
 
   function insertImageIntoEditor(file) {
     if (!file || !file.type.startsWith('image/')) return;
@@ -779,6 +1073,13 @@
 
       triggerAutoSave();
       updateStats(noteContentDiv.innerText);
+
+      // Auto-select newly inserted image
+      setTimeout(() => {
+        if (img && noteContentDiv?.contains(img)) {
+          selectImage(img);
+        }
+      }, 50);
     };
     reader.readAsDataURL(file);
   }
