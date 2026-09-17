@@ -385,7 +385,7 @@ func GetNotes(sectionID string) ([]Note, error) {
 		defer memStore.mu.RUnlock()
 		var res []Note
 		for _, n := range memStore.notes {
-			if n.SectionID == sectionID {
+			if sectionID == "" || sectionID == "all" || n.SectionID == sectionID {
 				res = append(res, n)
 			}
 		}
@@ -399,8 +399,15 @@ func GetNotes(sectionID string) ([]Note, error) {
 		return nil, err
 	}
 
-	query := "SELECT id, section_id, title, content, created_at, updated_at FROM notes WHERE section_id = $1 ORDER BY updated_at DESC;"
-	res, err := executeNeonSQL(query, []any{sectionID})
+	var query string
+	var args []any
+	if sectionID != "" && sectionID != "all" {
+		query = "SELECT id, section_id, title, content, created_at, updated_at FROM notes WHERE section_id = $1 ORDER BY updated_at DESC;"
+		args = []any{sectionID}
+	} else {
+		query = "SELECT id, section_id, title, content, created_at, updated_at FROM notes ORDER BY updated_at DESC;"
+	}
+	res, err := executeNeonSQL(query, args)
 	if err != nil {
 		return nil, err
 	}

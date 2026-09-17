@@ -17,6 +17,7 @@ export default function NotepadApp() {
   const [isLoading, setIsLoading] = useState(true);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [theme, setTheme] = useState('classic');
 
   // Link & Selection State
   const [savedRange, setSavedRange] = useState(null);
@@ -28,6 +29,10 @@ export default function NotepadApp() {
   // Word-style Image Resizing State
   const [selectedImageNode, setSelectedImageNode] = useState(null);
   const [selectedImageRect, setSelectedImageRect] = useState(null); // { top, left, width, height }
+
+  // Undo / Redo History State
+  const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
 
   // Modal State
   const [modalType, setModalType] = useState(null); // 'new-section' | 'rename-section' | 'delete-section' | 'delete-note' | 'insert-link'
@@ -42,12 +47,22 @@ export default function NotepadApp() {
   const linkInputRef = useRef(null);
   const imageInputRef = useRef(null);
 
+  // History Stack Ref: { [noteId]: { past: [], future: [], current: null } }
+  const historyRef = useRef({});
+  const typingTimeoutRef = useRef(null);
+  const isUndoRedoActionRef = useRef(false);
+
   const activeNoteIdRef = useRef(activeNoteId);
   const activeNoteTitleRef = useRef(activeNoteTitle);
   const activeNoteContentRef = useRef(activeNoteContent);
   const hasUnsavedChangesRef = useRef(false);
 
   const activeSectionIdRef = useRef(activeSectionId);
+
+  // In-Memory Section Notes Cache for 0ms Instant Tab Switching
+  const notesCacheRef = useRef({}); // { [sectionId]: Note[] }
+  const [, setNotesCacheVersion] = useState(0);
+  const activeNoteBySectionRef = useRef({}); // { [sectionId]: noteId }
 
   useEffect(() => {
     activeSectionIdRef.current = activeSectionId;
@@ -65,94 +80,47 @@ export default function NotepadApp() {
     activeNoteContentRef.current = activeNoteContent;
   }, [activeNoteContent]);
 
-  // 1. Fetch initial sections and system status
-  const loadSections = useCallback(async () => {
+  // Synchronize and detect active theme
+  useEffect(() => {
     try {
-      const [secRes, statusRes] = await Promise.all([
-        fetch('/api/sections'),
-        fetch('/api/status')
-      ]);
-
-      const secData = await secRes.json();
-      const statusData = await statusRes.json();
-
-      setIsNeon(Boolean(statusData?.isNeon));
-
-      if (secData.sections && secData.sections.length > 0) {
-        setSections(secData.sections);
-        setActiveSectionId((prev) => (prev ? prev : secData.sections[0].id));
-      } else {
-        setSections([]);
-      }
-    } catch (err) {
-      console.error('Failed to load sections:', err);
-    } finally {
-      setIsLoading(false);
-    }
+      const saved = localStorage.getItem('n0tes_theme');
+      const preferred = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'obsidian' : 'classic');
+      setTheme(preferred);
+      document.documentElement.setAttribute('data-theme', preferred);
+    } catch {}
   }, []);
 
-  useEffect(() => {
-    loadSections();
-  }, [loadSections]);
-
-  // 2. Load notes when activeSectionId changes
-  const loadNotes = useCallback(async (secId) => {
-    if (!secId) {
-      setNotes([]);
-      setActiveNoteId(null);
-      return;
-    }
-    try {
-      const res = await fetch(`/api/notes?sectionId=${encodeURIComponent(secId)}`);
-      const data = await res.json();
-      let loadedNotes = data.notes || [];
-
-      // Check for any local crash recovery drafts
-      if (typeof window !== 'undefined' && window.localStorage) {
-        loadedNotes = loadedNotes.map((n) => {
-          try {
-            const rawDraft = window.localStorage.getItem(`n0tes_draft_${n.id}`);
-            if (rawDraft) {
-              const draft = JSON.parse(rawDraft);
-              if (draft.savedAt && draft.savedAt > new Date(n.updated_at).getTime()) {
-                return { ...n, title: draft.title || n.title, content: draft.content !== undefined ? draft.content : n.content };
-              }
-            }
-          } catch {}
-          return n;
-        });
-      }
-
-      setNotes(loadedNotes);
-
-      if (loadedNotes.length > 0) {
-        const first = loadedNotes[0];
-        setActiveNoteId(first.id);
-        setActiveNoteTitle(first.title);
-        setActiveNoteContent(first.content || '');
-        if (editorRef.current) {
-          editorRef.current.innerHTML = first.content || '';
-        }
-        setLastSavedTime(new Date(first.updated_at).toLocaleTimeString());
-      } else {
-        setActiveNoteId(null);
-        setActiveNoteTitle('');
-        setActiveNoteContent('');
-        if (editorRef.current) {
-          editorRef.current.innerHTML = '';
-        }
-        setLastSavedTime(null);
-      }
-    } catch (err) {
-      console.error('Failed to load notes:', err);
-    }
+  const toggleTheme = useCallback(() => {
+    setTheme((prevTheme) => {
+      const nextTheme = prevTheme === 'obsidian' ? 'classic' : 'obsidian';
+      try {
+        localStorage.setItem('n0tes_theme', nextTheme);
+        document.documentElement.setAttribute('data-theme', nextTheme);
+      } catch {}
+      return nextTheme;
+    });
   }, []);
 
-  useEffect(() => {
-    if (activeSectionId) {
-      loadNotes(activeSectionId);
-    }
-  }, [activeSectionId, loadNotes]);
+  // Helper to merge local crash recovery drafts
+  const applyLocalDrafts = useCallback((rawNotes) => {
+    if (typeof window === 'undefined' || !window.localStorage) return rawNotes;
+    return rawNotes.map((n) => {
+      try {
+        const rawDraft = window.localStorage.getItem(`n0tes_draft_${n.id}`);
+        if (rawDraft) {
+          const draft = JSON.parse(rawDraft);
+          if (draft.savedAt && draft.savedAt > new Date(n.updated_at).getTime()) {
+            return {
+              ...n,
+              title: draft.title || n.title,
+              content: draft.content !== undefined ? draft.content : n.content,
+            };
+          }
+        }
+      } catch {}
+      return n;
+    });
+  }, []);
 
   // 3. Save note to backend
   const performSave = async (noteId, title, content) => {
@@ -176,10 +144,17 @@ export default function NotepadApp() {
       const data = await res.json();
       const updated = data.note;
 
-      // Update local notes list
+      // Update local notes list and in-memory cache
       setNotes((prevNotes) =>
         prevNotes.map((n) => (n.id === updated.id ? updated : n))
       );
+      const secId = updated.section_id || activeSectionIdRef.current;
+      if (notesCacheRef.current[secId]) {
+        notesCacheRef.current[secId] = notesCacheRef.current[secId].map((n) =>
+          n.id === updated.id ? updated : n
+        );
+      }
+      setNotesCacheVersion((v) => v + 1);
 
       // Clean local storage draft once server save succeeds
       if (typeof window !== 'undefined' && window.localStorage) {
@@ -279,41 +254,17 @@ export default function NotepadApp() {
     };
   }, [saveImmediatelyOnPageClose]);
 
-  // 5. Switch active note
-  const selectNote = (note) => {
-    flushPendingSave();
-    setActiveNoteId(note.id);
-    setActiveNoteTitle(note.title);
-    setActiveNoteContent(note.content || '');
-    if (editorRef.current) {
-      editorRef.current.innerHTML = note.content || '';
-    }
-    setActiveHoverLink(null);
-    setSelectedImageNode(null);
-    setSelectedImageRect(null);
-    setSaveStatus('idle');
-    setLastSavedTime(new Date(note.updated_at).toLocaleTimeString());
-  };
-
-  // Sync editor innerHTML when activeNoteId changes
-  useEffect(() => {
-    if (editorRef.current && activeNoteContent !== undefined) {
-      if (editorRef.current.innerHTML !== activeNoteContent) {
-        editorRef.current.innerHTML = activeNoteContent;
-      }
-    }
-  }, [activeNoteId]); // only re-sync on note change
-
   // 6. Debounced auto-save on edit + instant localStorage cache
-  const triggerAutoSave = (newTitle, newContent) => {
-    if (!activeNoteId) return;
+  const triggerAutoSave = useCallback((newTitle, newContent) => {
+    const noteId = activeNoteIdRef.current;
+    if (!noteId) return;
     hasUnsavedChangesRef.current = true;
     setSaveStatus('saving');
 
     // Instant local backup
     try {
       if (typeof window !== 'undefined' && window.localStorage) {
-        window.localStorage.setItem(`n0tes_draft_${activeNoteId}`, JSON.stringify({
+        window.localStorage.setItem(`n0tes_draft_${noteId}`, JSON.stringify({
           title: newTitle,
           content: newContent,
           savedAt: Date.now(),
@@ -325,21 +276,428 @@ export default function NotepadApp() {
       clearTimeout(saveTimeoutRef.current);
     }
     saveTimeoutRef.current = setTimeout(() => {
-      performSave(activeNoteId, newTitle, newContent);
+      performSave(noteId, newTitle, newContent);
     }, 600);
-  };
+  }, []);
+
+  // 7. Per-Note Undo / Redo History Management
+  const getNoteHistory = useCallback((noteId) => {
+    if (!noteId) return null;
+    if (!historyRef.current[noteId]) {
+      historyRef.current[noteId] = {
+        past: [],
+        future: [],
+        current: null,
+      };
+    }
+    return historyRef.current[noteId];
+  }, []);
+
+  const updateUndoRedoButtons = useCallback((noteId) => {
+    const id = noteId || activeNoteIdRef.current;
+    if (!id || !historyRef.current[id]) {
+      setCanUndo(false);
+      setCanRedo(false);
+      return;
+    }
+    const h = historyRef.current[id];
+    setCanUndo(h.past.length > 0 || (typingTimeoutRef.current !== null));
+    setCanRedo(h.future.length > 0);
+  }, []);
+
+  const initNoteHistory = useCallback((noteId, title, content) => {
+    if (!noteId) return;
+    const h = getNoteHistory(noteId);
+    if (!h) return;
+    if (!h.current) {
+      h.current = { title: title || '', content: content || '' };
+      h.past = [];
+      h.future = [];
+    }
+    updateUndoRedoButtons(noteId);
+  }, [getNoteHistory, updateUndoRedoButtons]);
+
+  const recordSnapshot = useCallback((newTitle, newContent, immediate = false) => {
+    const noteId = activeNoteIdRef.current;
+    if (!noteId || isUndoRedoActionRef.current) return;
+
+    const h = getNoteHistory(noteId);
+    if (!h) return;
+
+    const title = newTitle !== undefined ? newTitle : (activeNoteTitleRef.current || '');
+    const content = newContent !== undefined ? newContent : (editorRef.current ? editorRef.current.innerHTML : (activeNoteContentRef.current || ''));
+
+    if (!h.current) {
+      h.current = { title, content };
+      updateUndoRedoButtons(noteId);
+      return;
+    }
+
+    if (h.current.title === title && h.current.content === content) {
+      return;
+    }
+
+    const doPush = () => {
+      h.past.push({ ...h.current });
+      if (h.past.length > 60) {
+        h.past.shift();
+      }
+      h.current = { title, content };
+      h.future = [];
+      updateUndoRedoButtons(noteId);
+    };
+
+    if (immediate) {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      doPush();
+    } else {
+      if (typingTimeoutRef.current) {
+        clearTimeout(typingTimeoutRef.current);
+      }
+      typingTimeoutRef.current = setTimeout(() => {
+        doPush();
+        typingTimeoutRef.current = null;
+      }, 400);
+    }
+  }, [getNoteHistory, updateUndoRedoButtons]);
+
+  const undo = useCallback(() => {
+    const noteId = activeNoteIdRef.current;
+    if (!noteId) return;
+    const h = getNoteHistory(noteId);
+    if (!h) return;
+
+    // Check if there is an uncommitted typing burst in progress
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+      const currentDomContent = editorRef.current ? editorRef.current.innerHTML : (activeNoteContentRef.current || '');
+      const currentDomTitle = titleInputRef.current ? titleInputRef.current.value : (activeNoteTitleRef.current || '');
+
+      if (h.current && (h.current.content !== currentDomContent || h.current.title !== currentDomTitle)) {
+        h.future.push({ title: currentDomTitle, content: currentDomContent });
+        const targetState = { ...h.current };
+
+        isUndoRedoActionRef.current = true;
+        setActiveNoteTitle(targetState.title);
+        if (titleInputRef.current && titleInputRef.current.value !== targetState.title) {
+          titleInputRef.current.value = targetState.title;
+        }
+        setActiveNoteContent(targetState.content);
+        if (editorRef.current && editorRef.current.innerHTML !== targetState.content) {
+          editorRef.current.innerHTML = targetState.content;
+        }
+
+        if (selectedImageNode) {
+          selectedImageNode.classList.remove('selected');
+          setSelectedImageNode(null);
+          setSelectedImageRect(null);
+        }
+
+        triggerAutoSave(targetState.title, targetState.content);
+        updateUndoRedoButtons(noteId);
+
+        setTimeout(() => {
+          isUndoRedoActionRef.current = false;
+        }, 60);
+        return;
+      }
+    }
+
+    if (h.past.length === 0) return;
+
+    const currentDomState = {
+      title: activeNoteTitleRef.current || '',
+      content: editorRef.current ? editorRef.current.innerHTML : (activeNoteContentRef.current || ''),
+    };
+
+    const prevState = h.past.pop();
+    h.future.push(currentDomState);
+    h.current = { ...prevState };
+
+    isUndoRedoActionRef.current = true;
+
+    setActiveNoteTitle(prevState.title);
+    if (titleInputRef.current && titleInputRef.current.value !== prevState.title) {
+      titleInputRef.current.value = prevState.title;
+    }
+
+    setActiveNoteContent(prevState.content);
+    if (editorRef.current && editorRef.current.innerHTML !== prevState.content) {
+      editorRef.current.innerHTML = prevState.content;
+    }
+
+    if (selectedImageNode) {
+      selectedImageNode.classList.remove('selected');
+      setSelectedImageNode(null);
+      setSelectedImageRect(null);
+    }
+
+    triggerAutoSave(prevState.title, prevState.content);
+    updateUndoRedoButtons(noteId);
+
+    setTimeout(() => {
+      isUndoRedoActionRef.current = false;
+    }, 60);
+  }, [getNoteHistory, selectedImageNode, updateUndoRedoButtons, triggerAutoSave]);
+
+  const redo = useCallback(() => {
+    const noteId = activeNoteIdRef.current;
+    if (!noteId) return;
+    const h = getNoteHistory(noteId);
+    if (!h || h.future.length === 0) return;
+
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    const currentDomState = {
+      title: activeNoteTitleRef.current || '',
+      content: editorRef.current ? editorRef.current.innerHTML : (activeNoteContentRef.current || ''),
+    };
+
+    const nextState = h.future.pop();
+    h.past.push(currentDomState);
+    h.current = { ...nextState };
+
+    isUndoRedoActionRef.current = true;
+
+    setActiveNoteTitle(nextState.title);
+    if (titleInputRef.current && titleInputRef.current.value !== nextState.title) {
+      titleInputRef.current.value = nextState.title;
+    }
+
+    setActiveNoteContent(nextState.content);
+    if (editorRef.current && editorRef.current.innerHTML !== nextState.content) {
+      editorRef.current.innerHTML = nextState.content;
+    }
+
+    if (selectedImageNode) {
+      selectedImageNode.classList.remove('selected');
+      setSelectedImageNode(null);
+      setSelectedImageRect(null);
+    }
+
+    triggerAutoSave(nextState.title, nextState.content);
+    updateUndoRedoButtons(noteId);
+
+    setTimeout(() => {
+      isUndoRedoActionRef.current = false;
+    }, 60);
+  }, [getNoteHistory, selectedImageNode, updateUndoRedoButtons, triggerAutoSave]);
+
+  // Global Shortcut Listener for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e) => {
+      if (e.target && (e.target.closest('.retro-modal') || e.target.closest('.retro-input-modal'))) return;
+      if (modalType) return;
+
+      const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+      const isCtrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+      if (!isCtrlOrCmd) return;
+
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      } else if (key === 'y') {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [undo, redo, modalType]);
+
+  // 8. Switch active note
+  const selectNote = useCallback((note) => {
+    flushPendingSave();
+    if (!note) {
+      setActiveNoteId(null);
+      setActiveNoteTitle('');
+      setActiveNoteContent('');
+      if (editorRef.current) {
+        editorRef.current.innerHTML = '';
+      }
+      setActiveHoverLink(null);
+      setSelectedImageNode(null);
+      setSelectedImageRect(null);
+      setSaveStatus('idle');
+      setLastSavedTime(null);
+      setCanUndo(false);
+      setCanRedo(false);
+      return;
+    }
+    setActiveNoteId(note.id);
+    setActiveNoteTitle(note.title);
+    setActiveNoteContent(note.content || '');
+    if (editorRef.current) {
+      editorRef.current.innerHTML = note.content || '';
+    }
+    setActiveHoverLink(null);
+    setSelectedImageNode(null);
+    setSelectedImageRect(null);
+    setSaveStatus('idle');
+    setLastSavedTime(new Date(note.updated_at).toLocaleTimeString());
+    initNoteHistory(note.id, note.title, note.content || '');
+    if (activeSectionIdRef.current) {
+      activeNoteBySectionRef.current[activeSectionIdRef.current] = note.id;
+    }
+  }, [flushPendingSave, initNoteHistory]);
+
+  // 9. Parallel Startup Prefetching for All Sections & Notes
+  const loadSections = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const [secRes, statusRes, notesRes] = await Promise.all([
+        fetch('/api/sections').then((r) => r.json()).catch(() => ({ sections: [] })),
+        fetch('/api/status').then((r) => r.json()).catch(() => ({ isNeon: false })),
+        fetch('/api/notes').then((r) => r.json()).catch(() => ({ notes: [] })),
+      ]);
+
+      setIsNeon(Boolean(statusRes?.isNeon));
+
+      const secList = secRes.sections || [];
+      setSections(secList);
+
+      const allNotes = applyLocalDrafts(notesRes.notes || []);
+      const cache = {};
+      secList.forEach((s) => {
+        cache[s.id] = [];
+      });
+      allNotes.forEach((n) => {
+        if (!cache[n.section_id]) cache[n.section_id] = [];
+        cache[n.section_id].push(n);
+      });
+      Object.keys(cache).forEach((secId) => {
+        cache[secId].sort(
+          (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+        );
+      });
+      notesCacheRef.current = cache;
+      setNotesCacheVersion((v) => v + 1);
+
+      const initialSecId = secList.length > 0 ? secList[0].id : null;
+      setActiveSectionId(initialSecId);
+      activeSectionIdRef.current = initialSecId;
+
+      if (initialSecId) {
+        const initialNotes = cache[initialSecId] || [];
+        setNotes(initialNotes);
+        if (initialNotes.length > 0) {
+          const first = initialNotes[0];
+          selectNote(first);
+        } else {
+          selectNote(null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load initial sections & notes:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [applyLocalDrafts, selectNote]);
+
+  useEffect(() => {
+    loadSections();
+  }, [loadSections]);
+
+  // 10. Instant 0ms Section Tab Switch with Background Revalidation
+  const switchSection = useCallback((secId) => {
+    if (!secId || activeSectionIdRef.current === secId) return;
+
+    // Flush any pending auto-save for current note
+    flushPendingSave();
+
+    // Remember currently selected note for this section
+    if (activeSectionIdRef.current && activeNoteIdRef.current) {
+      activeNoteBySectionRef.current[activeSectionIdRef.current] = activeNoteIdRef.current;
+    }
+
+    // Update active section
+    setActiveSectionId(secId);
+    activeSectionIdRef.current = secId;
+
+    // INSTANT SWITCH (0ms): retrieve from in-memory cache
+    const secNotes = notesCacheRef.current[secId] || [];
+    setNotes(secNotes);
+
+    const rememberedId = activeNoteBySectionRef.current[secId];
+    const targetNote = rememberedId
+      ? secNotes.find((n) => n.id === rememberedId) || secNotes[0]
+      : secNotes[0];
+
+    selectNote(targetNote || null);
+
+    // Silent background revalidation (stale-while-revalidate, non-blocking)
+    fetch(`/api/notes?sectionId=${encodeURIComponent(secId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.notes) {
+          const fresh = applyLocalDrafts(data.notes);
+          notesCacheRef.current[secId] = fresh;
+          if (activeSectionIdRef.current === secId) {
+            setNotes(fresh);
+          }
+          setNotesCacheVersion((v) => v + 1);
+        }
+      })
+      .catch((e) => console.error('Background notes sync error:', e));
+  }, [flushPendingSave, selectNote, applyLocalDrafts]);
+
+  // Sync editor innerHTML and history when activeNoteId changes
+  useEffect(() => {
+    if (editorRef.current && activeNoteContent !== undefined) {
+      if (editorRef.current.innerHTML !== activeNoteContent) {
+        editorRef.current.innerHTML = activeNoteContent;
+      }
+    }
+    if (activeNoteId) {
+      initNoteHistory(activeNoteId, activeNoteTitle, activeNoteContent);
+    } else {
+      setCanUndo(false);
+      setCanRedo(false);
+    }
+  }, [activeNoteId, activeNoteContent, activeNoteTitle, initNoteHistory]);
 
   const handleTitleChange = (e) => {
     const val = e.target.value;
     setActiveNoteTitle(val);
-    triggerAutoSave(val, activeNoteContent);
+    setNotes((prev) =>
+      prev.map((n) => (n.id === activeNoteId ? { ...n, title: val } : n))
+    );
+    if (activeSectionId && notesCacheRef.current[activeSectionId]) {
+      notesCacheRef.current[activeSectionId] = notesCacheRef.current[activeSectionId].map((n) =>
+        n.id === activeNoteId ? { ...n, title: val } : n
+      );
+    }
+    recordSnapshot(val, activeNoteContentRef.current, false);
+    triggerAutoSave(val, activeNoteContentRef.current);
   };
 
-  const handleEditorInput = () => {
+  const handleEditorInput = (immediateSnapshot = false) => {
     if (!editorRef.current) return;
     const html = editorRef.current.innerHTML;
     setActiveNoteContent(html);
-    triggerAutoSave(activeNoteTitle, html);
+    if (activeSectionId && notesCacheRef.current[activeSectionId]) {
+      notesCacheRef.current[activeSectionId] = notesCacheRef.current[activeSectionId].map((n) =>
+        n.id === activeNoteId ? { ...n, content: html } : n
+      );
+    }
+    recordSnapshot(activeNoteTitleRef.current, html, immediateSnapshot);
+    triggerAutoSave(activeNoteTitleRef.current, html);
   };
 
   // 7. Manual Immediate Save
@@ -371,6 +729,15 @@ export default function NotepadApp() {
 
     // Optimistically update state so user can type immediately
     setNotes((prev) => [newNote, ...prev]);
+    if (notesCacheRef.current[activeSectionId]) {
+      notesCacheRef.current[activeSectionId] = [newNote, ...notesCacheRef.current[activeSectionId]];
+    } else {
+      notesCacheRef.current[activeSectionId] = [newNote];
+    }
+    setNotesCacheVersion((v) => v + 1);
+    if (activeSectionId) {
+      activeNoteBySectionRef.current[activeSectionId] = newId;
+    }
     setActiveNoteId(newId);
     setActiveNoteTitle(initialTitle);
     setActiveNoteContent(initialContent);
@@ -415,16 +782,16 @@ export default function NotepadApp() {
       });
       const remaining = notes.filter((n) => n.id !== activeNoteId);
       setNotes(remaining);
+      if (notesCacheRef.current[activeSectionId]) {
+        notesCacheRef.current[activeSectionId] = notesCacheRef.current[activeSectionId].filter(
+          (n) => n.id !== activeNoteId
+        );
+      }
+      setNotesCacheVersion((v) => v + 1);
       if (remaining.length > 0) {
         selectNote(remaining[0]);
       } else {
-        setActiveNoteId(null);
-        setActiveNoteTitle('');
-        setActiveNoteContent('');
-        if (editorRef.current) {
-          editorRef.current.innerHTML = '';
-        }
-        setLastSavedTime(null);
+        selectNote(null);
       }
       setModalType(null);
     } catch (err) {
@@ -447,9 +814,11 @@ export default function NotepadApp() {
       const data = await res.json();
       const newSec = data.section;
       setSections((prev) => [...prev, newSec]);
-      setActiveSectionId(newSec.id);
+      notesCacheRef.current[newSec.id] = [];
+      setNotesCacheVersion((v) => v + 1);
       setModalType(null);
       setModalInputValue('');
+      switchSection(newSec.id);
     } catch (err) {
       console.error('Failed to create section:', err);
       alert('Could not create section.');
@@ -488,11 +857,20 @@ export default function NotepadApp() {
       });
       const remaining = sections.filter((s) => s.id !== targetSection.id);
       setSections(remaining);
-      if (activeSectionId === targetSection.id) {
-        setActiveSectionId(remaining.length > 0 ? remaining[0].id : null);
-      }
+      delete notesCacheRef.current[targetSection.id];
+      delete activeNoteBySectionRef.current[targetSection.id];
+      setNotesCacheVersion((v) => v + 1);
       setModalType(null);
       setTargetSection(null);
+      if (activeSectionId === targetSection.id) {
+        if (remaining.length > 0) {
+          switchSection(remaining[0].id);
+        } else {
+          setActiveSectionId(null);
+          setNotes([]);
+          selectNote(null);
+        }
+      }
     } catch (err) {
       console.error('Failed to delete section:', err);
       alert('Could not delete section.');
@@ -541,6 +919,7 @@ export default function NotepadApp() {
     }
 
     const textToInsert = (linkDisplayText || selectedText || cleanUrl).trim();
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current?.innerHTML, true);
 
     if (savedRange && editorRef.current) {
       const sel = window.getSelection();
@@ -572,25 +951,26 @@ export default function NotepadApp() {
       editorRef.current.appendChild(anchor);
     }
 
-    handleEditorInput();
+    handleEditorInput(true);
     setModalType(null);
     setSavedRange(null);
   };
 
   const removeHyperlink = () => {
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current?.innerHTML, true);
     if (activeHoverLink && activeHoverLink.node) {
       const parent = activeHoverLink.node.parentNode;
       while (activeHoverLink.node.firstChild) {
         parent.insertBefore(activeHoverLink.node.firstChild, activeHoverLink.node);
       }
       parent.removeChild(activeHoverLink.node);
-      handleEditorInput();
+      handleEditorInput(true);
       setActiveHoverLink(null);
       return;
     }
 
     document.execCommand('unlink', false, null);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
   // Keyboard shortcut Ctrl+K / Cmd+K for link
@@ -659,6 +1039,7 @@ export default function NotepadApp() {
 
   const deleteSelectedImage = useCallback(() => {
     if (!selectedImageNode) return;
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current?.innerHTML, true);
     const img = selectedImageNode;
     img.classList.remove('selected');
     setSelectedImageNode(null);
@@ -666,8 +1047,8 @@ export default function NotepadApp() {
     if (img.parentNode) {
       img.parentNode.removeChild(img);
     }
-    handleEditorInput();
-  }, [selectedImageNode, handleEditorInput]);
+    handleEditorInput(true);
+  }, [selectedImageNode, handleEditorInput, recordSnapshot]);
 
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -692,19 +1073,21 @@ export default function NotepadApp() {
 
   const applyImageSizePreset = (pct) => {
     if (!selectedImageNode || !editorRef.current) return;
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current.innerHTML, true);
     const editorWidth = editorRef.current.clientWidth || 650;
     const newWidth = Math.round((editorWidth - 20) * (pct / 100));
     selectedImageNode.style.width = `${newWidth}px`;
     selectedImageNode.style.height = 'auto';
     selectedImageNode.setAttribute('width', newWidth);
     updateResizeOverlay(selectedImageNode);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
   const resetImageSize = () => {
-    if (!selectedImageNode) return;
+    if (!selectedImageNode || !editorRef.current) return;
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current.innerHTML, true);
     if (selectedImageNode.naturalWidth) {
-      const maxW = (editorRef.current?.clientWidth || 700) - 20;
+      const maxW = (editorRef.current.clientWidth || 700) - 20;
       const targetW = Math.min(selectedImageNode.naturalWidth, maxW);
       selectedImageNode.style.width = `${targetW}px`;
       selectedImageNode.style.height = 'auto';
@@ -715,11 +1098,12 @@ export default function NotepadApp() {
       selectedImageNode.removeAttribute('width');
     }
     updateResizeOverlay(selectedImageNode);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
   const applyImageAlign = (alignment) => {
-    if (!selectedImageNode) return;
+    if (!selectedImageNode || !editorRef.current) return;
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current.innerHTML, true);
     selectedImageNode.style.display = 'block';
     if (alignment === 'left') {
       selectedImageNode.style.marginLeft = '0';
@@ -732,14 +1116,16 @@ export default function NotepadApp() {
       selectedImageNode.style.marginRight = '0';
     }
     updateResizeOverlay(selectedImageNode);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
   const handleResizeMouseDown = (e, dir) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!selectedImageNode || !notepadSheetRef.current) return;
+    if (!selectedImageNode || !notepadSheetRef.current || !editorRef.current) return;
+
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current.innerHTML, true);
 
     const img = selectedImageNode;
     const startX = e.clientX;
@@ -748,7 +1134,7 @@ export default function NotepadApp() {
     const startHeight = img.offsetHeight || img.getBoundingClientRect().height;
     const aspectRatio = (startWidth > 0 && startHeight > 0) ? (startWidth / startHeight) : 1;
 
-    const maxAllowedWidth = Math.max(200, (editorRef.current?.clientWidth || 700) - 10);
+    const maxAllowedWidth = Math.max(200, (editorRef.current.clientWidth || 700) - 10);
     const minWidth = 60;
 
     const onMouseMove = (moveEvent) => {
@@ -811,7 +1197,7 @@ export default function NotepadApp() {
           height: imgRect.height,
         });
       }
-      handleEditorInput();
+      handleEditorInput(true);
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -867,8 +1253,9 @@ export default function NotepadApp() {
 
   // Formatting helpers
   const applyFormat = (command) => {
+    recordSnapshot(activeNoteTitleRef.current, editorRef.current?.innerHTML, true);
     document.execCommand(command, false, null);
-    handleEditorInput();
+    handleEditorInput(true);
   };
 
   // 13. Image Insertion & Handling (Evernote-Style Direct Paste & Drag/Drop)
@@ -900,6 +1287,8 @@ export default function NotepadApp() {
 
       if (!range) return;
 
+      recordSnapshot(activeNoteTitleRef.current, editorRef.current?.innerHTML, true);
+
       const img = document.createElement('img');
       img.src = dataUrl;
       img.alt = file.name || 'Pasted image';
@@ -928,7 +1317,7 @@ export default function NotepadApp() {
       }
 
       // Seamlessly update note state and queue debounced autosave
-      handleEditorInput();
+      handleEditorInput(true);
 
       // Auto-select newly inserted image so resize handles immediately appear
       setTimeout(() => {
@@ -940,7 +1329,7 @@ export default function NotepadApp() {
       }, 50);
     };
     reader.readAsDataURL(file);
-  }, [handleEditorInput, updateResizeOverlay]);
+  }, [handleEditorInput, updateResizeOverlay, recordSnapshot]);
 
   const handleEditorPaste = (e) => {
     const clipboardData = e.clipboardData;
@@ -1074,11 +1463,15 @@ export default function NotepadApp() {
   const filteredNotes = useMemo(() => {
     if (!searchQuery.trim()) return notes;
     const q = searchQuery.toLowerCase();
-    return notes.filter(
-      (n) =>
-        (n.title && n.title.toLowerCase().includes(q)) ||
-        (n.content && n.content.toLowerCase().includes(q))
-    );
+    return notes.filter((n) => {
+      const titleMatch = (n.title && n.title.toLowerCase().includes(q));
+      if (titleMatch) return true;
+      if (!n.content) return false;
+      const clean = n.content.includes('data:image/')
+        ? n.content.replace(/src="data:image\/[^"]+"/gi, '')
+        : n.content;
+      return clean.toLowerCase().includes(q);
+    });
   }, [notes, searchQuery]);
 
   // Word and character count calculation
@@ -1133,6 +1526,14 @@ export default function NotepadApp() {
           </div>
         </div>
         <div className="masthead-actions">
+          <button
+            id="theme-toggle-btn"
+            className="retro-btn"
+            onClick={toggleTheme}
+            title="Switch between Classic Manila and Obsidian Desk Dark Mode"
+          >
+            {theme === 'obsidian' ? '☀️ Classic Manila' : '🌙 Obsidian Desk'}
+          </button>
           <span className="masthead-date">📅 {todayString}</span>
           <button
             id="new-note-btn"
@@ -1162,6 +1563,7 @@ export default function NotepadApp() {
         <div className="section-tabs-bar" role="tablist">
           {sections.map((sec) => {
             const isActive = sec.id === activeSectionId;
+            const count = (notesCacheRef.current[sec.id] || (isActive ? notes : [])).length;
             return (
               <div
                 key={sec.id}
@@ -1169,16 +1571,11 @@ export default function NotepadApp() {
                 aria-selected={isActive}
                 className={`section-tab ${isActive ? 'active' : ''}`}
                 onClick={() => {
-                  if (activeSectionId !== sec.id) {
-                    flushPendingSave();
-                    setActiveSectionId(sec.id);
-                  }
+                  switchSection(sec.id);
                 }}
               >
                 <span>📁 {sec.name}</span>
-                {isActive && (
-                  <span className="tab-badge">{notes.length}</span>
-                )}
+                <span className="tab-badge">{count}</span>
                 {/* Section edit / delete buttons */}
                 <div className="section-tab-actions" onClick={(e) => e.stopPropagation()}>
                   <button
@@ -1260,7 +1657,12 @@ export default function NotepadApp() {
                     month: 'short',
                     day: 'numeric',
                   });
-                  const snippet = (note.content || '').replace(/<[^>]+>/g, ' ').substring(0, 50);
+                  const cleanContent = note.content && note.content.includes('data:image/')
+                    ? note.content.replace(/src="data:image\/[^"]+"/gi, '')
+                    : (note.content || '');
+                  const cleanText = cleanContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+                  const snippet = cleanText.slice(0, 55);
+                  const wordsCount = cleanText ? cleanText.split(/\s+/).filter(Boolean).length : 0;
                   return (
                     <li
                       key={note.id}
@@ -1270,7 +1672,7 @@ export default function NotepadApp() {
                       <div className="note-item-title">{note.title || 'Untitled Note'}</div>
                       <div className="note-item-meta">
                         <span>{dateStr}</span>
-                        <span>{note.content ? `${snippet.split(/\s+/).filter(Boolean).length} words` : 'empty'}</span>
+                        <span>{wordsCount > 0 ? `${wordsCount} words` : 'empty'}</span>
                       </div>
                       {snippet && (
                         <div className="note-item-snippet">
@@ -1360,6 +1762,27 @@ export default function NotepadApp() {
             {/* Inbuilt Retro Formatting Ribbon (Includes Hyperlink Feature) */}
             {activeNoteId && (
               <div className="editor-format-bar">
+                <button
+                  id="undo-btn"
+                  className="format-btn"
+                  onClick={undo}
+                  disabled={!canUndo}
+                  title="Undo last change (Ctrl+Z)"
+                >
+                  ↶ Undo
+                </button>
+                <button
+                  id="redo-btn"
+                  className="format-btn"
+                  onClick={redo}
+                  disabled={!canRedo}
+                  title="Redo undone change (Ctrl+Y or Ctrl+Shift+Z)"
+                >
+                  ↷ Redo
+                </button>
+
+                <div className="format-divider"></div>
+
                 <button
                   id="insert-link-btn"
                   className="format-btn"

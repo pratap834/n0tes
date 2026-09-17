@@ -19,6 +19,10 @@
   let modalType = null;
   let targetSection = null;
 
+  // In-Memory Section Notes Cache for 0ms Instant Tab Switching
+  const notesCache = {};
+  const activeNoteBySection = {};
+
   // DOM Elements
   const sectionTabsBar = document.getElementById('section-tabs-bar');
   const addSectionBtn = document.getElementById('add-section-btn');
@@ -28,6 +32,7 @@
   const sidebarCount = document.getElementById('sidebar-count');
   const noteTitleInput = document.getElementById('note-title');
   const noteContentDiv = document.getElementById('note-content');
+  const themeToggleBtn = document.getElementById('theme-toggle-btn');
   const newNoteBtn = document.getElementById('new-note-btn');
   const saveNoteBtn = document.getElementById('save-note-btn');
   const deleteNoteBtn = document.getElementById('delete-note-btn');
@@ -46,7 +51,9 @@
   const modalBody = document.getElementById('modal-body');
   const modalCloseBtn = document.getElementById('modal-close-btn');
 
-  // Formatting buttons
+  // Undo / Redo & Formatting buttons
+  const undoBtn = document.getElementById('undo-btn');
+  const redoBtn = document.getElementById('redo-btn');
   const insertLinkBtn = document.getElementById('insert-link-btn');
   const removeLinkBtn = document.getElementById('remove-link-btn');
   const boldBtn = document.getElementById('bold-btn');
@@ -55,6 +62,11 @@
   const bulletBtn = document.getElementById('bullet-btn');
   const insertImageBtn = document.getElementById('insert-image-btn');
   const imageFileInput = document.getElementById('image-file-input');
+
+  // Per-Note Undo / Redo Stack State
+  const historyMap = {};
+  let typingTimeout = null;
+  let isUndoRedoAction = false;
 
   // Status Bar Elements
   const neonDot = document.getElementById('neon-dot');
@@ -78,12 +90,59 @@
     })}`;
   }
 
-  // 1. Initial Load: Status and Sections
+  // Theme Management (Obsidian Desk vs Classic Manila)
+  let currentTheme = 'classic';
+  try {
+    const saved = localStorage.getItem('n0tes_theme');
+    currentTheme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'obsidian' : 'classic');
+  } catch {}
+
+  function updateThemeUI(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (themeToggleBtn) {
+      themeToggleBtn.textContent = theme === 'obsidian' ? '☀️ Classic Manila' : '🌙 Obsidian Desk';
+    }
+  }
+
+  updateThemeUI(currentTheme);
+
+  if (themeToggleBtn) {
+    themeToggleBtn.onclick = () => {
+      currentTheme = currentTheme === 'obsidian' ? 'classic' : 'obsidian';
+      try {
+        localStorage.setItem('n0tes_theme', currentTheme);
+      } catch {}
+      updateThemeUI(currentTheme);
+    };
+  }
+
+  // Helper to merge local crash recovery drafts
+  function applyLocalDrafts(rawNotes) {
+    return rawNotes.map((n) => {
+      try {
+        const raw = localStorage.getItem(`n0tes_draft_${n.id}`);
+        if (raw) {
+          const draft = JSON.parse(raw);
+          if (draft.savedAt && draft.savedAt > new Date(n.updated_at).getTime()) {
+            return {
+              ...n,
+              title: draft.title || n.title,
+              content: draft.content !== undefined ? draft.content : n.content,
+            };
+          }
+        }
+      } catch {}
+      return n;
+    });
+  }
+
+  // 1. Initial Load: Status, Sections, and Parallel Notes Prefetch
   async function init() {
     try {
-      const [statusRes, secRes] = await Promise.all([
+      const [statusRes, secRes, notesRes] = await Promise.all([
         fetch('/api/status').then((r) => r.json()).catch(() => ({ isNeon: false })),
         fetch('/api/sections').then((r) => r.json()).catch(() => ({ sections: [] })),
+        fetch('/api/notes').then((r) => r.json()).catch(() => ({ notes: [] })),
       ]);
 
       const isNeon = Boolean(statusRes.isNeon);
@@ -96,12 +155,36 @@
       }
 
       sections = secRes.sections || [];
+      const allNotes = applyLocalDrafts(notesRes.notes || []);
+
+      // Group notes into notesCache
+      sections.forEach((s) => {
+        notesCache[s.id] = [];
+      });
+      allNotes.forEach((n) => {
+        if (!notesCache[n.section_id]) notesCache[n.section_id] = [];
+        notesCache[n.section_id].push(n);
+      });
+      Object.keys(notesCache).forEach((secId) => {
+        notesCache[secId].sort(
+          (a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
+        );
+      });
+
       if (sections.length > 0) {
         activeSectionId = sections[0].id;
+        notes = notesCache[activeSectionId] || [];
+      } else {
+        activeSectionId = null;
+        notes = [];
       }
+
       renderSections();
-      if (activeSectionId) {
-        await loadNotes(activeSectionId);
+      renderNotesList();
+      if (notes.length > 0) {
+        selectNote(notes[0]);
+      } else {
+        selectNote(null);
       }
     } catch (err) {
       console.error('Initialization error:', err);
@@ -124,12 +207,11 @@
       titleSpan.textContent = `📁 ${sec.name}`;
       tab.appendChild(titleSpan);
 
-      if (isActive) {
-        const badge = document.createElement('span');
-        badge.className = 'tab-badge';
-        badge.textContent = notes.length;
-        tab.appendChild(badge);
-      }
+      const count = (notesCache[sec.id] || (isActive ? notes : [])).length;
+      const badge = document.createElement('span');
+      badge.className = 'tab-badge';
+      badge.textContent = count;
+      tab.appendChild(badge);
 
       // Actions (Rename / Delete)
       const actionsDiv = document.createElement('div');
@@ -161,10 +243,7 @@
 
       tab.onclick = () => {
         if (activeSectionId !== sec.id) {
-          flushPendingSave();
-          activeSectionId = sec.id;
-          renderSections();
-          loadNotes(sec.id);
+          switchSection(sec.id);
         }
       };
 
@@ -192,44 +271,45 @@
     }
   }
 
-  // 3. Load Notes for Active Section
-  async function loadNotes(sectionId) {
-    if (!sectionId) {
-      notes = [];
-      renderNotesList();
-      selectNote(null);
-      return;
+  // 3. Instant 0ms Section Tab Switch with Background Revalidation
+  function switchSection(secId) {
+    if (!secId || activeSectionId === secId) return;
+
+    flushPendingSave();
+
+    if (activeSectionId && activeNoteId) {
+      activeNoteBySection[activeSectionId] = activeNoteId;
     }
 
-    try {
-      const res = await fetch(`/api/notes?sectionId=${encodeURIComponent(sectionId)}`);
-      const data = await res.json();
-      notes = data.notes || [];
+    activeSectionId = secId;
+    renderSections();
 
-      // Check localStorage for any crash drafts
-      notes = notes.map((n) => {
-        try {
-          const raw = localStorage.getItem(`n0tes_draft_${n.id}`);
-          if (raw) {
-            const draft = JSON.parse(raw);
-            if (draft.savedAt && draft.savedAt > new Date(n.updated_at).getTime()) {
-              return { ...n, title: draft.title || n.title, content: draft.content !== undefined ? draft.content : n.content };
-            }
+    // 0ms INSTANT SWITCH from in-memory cache
+    notes = notesCache[secId] || [];
+    renderNotesList();
+
+    const rememberedId = activeNoteBySection[secId];
+    const targetNote = rememberedId
+      ? notes.find((n) => n.id === rememberedId) || notes[0]
+      : notes[0];
+
+    selectNote(targetNote || null);
+
+    // Silent background revalidation
+    fetch(`/api/notes?sectionId=${encodeURIComponent(secId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.notes) {
+          const fresh = applyLocalDrafts(data.notes);
+          notesCache[secId] = fresh;
+          if (activeSectionId === secId) {
+            notes = fresh;
+            renderNotesList();
           }
-        } catch {}
-        return n;
-      });
-
-      renderNotesList();
-
-      if (notes.length > 0) {
-        selectNote(notes[0]);
-      } else {
-        selectNote(null);
-      }
-    } catch (err) {
-      console.error('Failed to load notes:', err);
-    }
+          renderSections();
+        }
+      })
+      .catch((e) => console.error('Background sync error:', e));
   }
 
   // 4. Render Notes List
@@ -275,7 +355,10 @@
       });
       metaDiv.appendChild(dateSpan);
 
-      const cleanText = (n.content || '').replace(/<[^>]+>/g, ' ').trim();
+      const cleanContent = (n.content && n.content.includes('data:image/'))
+        ? n.content.replace(/src="data:image\/[^"]+"/gi, '')
+        : (n.content || '');
+      const cleanText = cleanContent.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
       const wordsCount = cleanText ? cleanText.split(/\s+/).filter(Boolean).length : 0;
       const wordSpan = document.createElement('span');
       wordSpan.textContent = wordsCount > 0 ? `${wordsCount} words` : 'empty';
@@ -306,12 +389,210 @@
     const q = searchQuery.toLowerCase();
     return notes.filter((n) => {
       const titleMatch = (n.title || '').toLowerCase().includes(q);
-      const contentMatch = (n.content || '').toLowerCase().includes(q);
-      return titleMatch || contentMatch;
+      if (titleMatch) return true;
+      if (!n.content) return false;
+      const clean = n.content.includes('data:image/')
+        ? n.content.replace(/src="data:image\/[^"]+"/gi, '')
+        : n.content;
+      return clean.toLowerCase().includes(q);
     });
   }
 
-  // 5. Select Note into Editor
+  // 5. Per-Note Undo / Redo History Management
+  function getNoteHistory(noteId) {
+    if (!noteId) return null;
+    if (!historyMap[noteId]) {
+      historyMap[noteId] = {
+        past: [],
+        future: [],
+        current: null,
+      };
+    }
+    return historyMap[noteId];
+  }
+
+  function updateUndoRedoButtons(noteId) {
+    const id = noteId || activeNoteId;
+    if (!id || !historyMap[id]) {
+      if (undoBtn) undoBtn.disabled = true;
+      if (redoBtn) redoBtn.disabled = true;
+      return;
+    }
+    const h = historyMap[id];
+    const canUndo = h.past.length > 0 || (typingTimeout !== null);
+    const canRedo = h.future.length > 0;
+    if (undoBtn) undoBtn.disabled = !canUndo;
+    if (redoBtn) redoBtn.disabled = !canRedo;
+  }
+
+  function initNoteHistory(noteId, title, content) {
+    if (!noteId) return;
+    const h = getNoteHistory(noteId);
+    if (!h) return;
+    if (!h.current) {
+      h.current = { title: title || '', content: content || '' };
+      h.past = [];
+      h.future = [];
+    }
+    updateUndoRedoButtons(noteId);
+  }
+
+  function recordSnapshot(newTitle, newContent, immediate = false) {
+    if (!activeNoteId || isUndoRedoAction) return;
+    const h = getNoteHistory(activeNoteId);
+    if (!h) return;
+
+    const title = newTitle !== undefined ? newTitle : (noteTitleInput ? noteTitleInput.value : '');
+    const content = newContent !== undefined ? newContent : (noteContentDiv ? noteContentDiv.innerHTML : '');
+
+    if (!h.current) {
+      h.current = { title, content };
+      updateUndoRedoButtons(activeNoteId);
+      return;
+    }
+
+    if (h.current.title === title && h.current.content === content) {
+      return;
+    }
+
+    const doPush = () => {
+      h.past.push({ ...h.current });
+      if (h.past.length > 60) {
+        h.past.shift();
+      }
+      h.current = { title, content };
+      h.future = [];
+      updateUndoRedoButtons(activeNoteId);
+    };
+
+    if (immediate) {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+        typingTimeout = null;
+      }
+      doPush();
+    } else {
+      if (typingTimeout) {
+        clearTimeout(typingTimeout);
+      }
+      typingTimeout = setTimeout(() => {
+        doPush();
+        typingTimeout = null;
+      }, 400);
+    }
+  }
+
+  function undo() {
+    if (!activeNoteId) return;
+    const h = getNoteHistory(activeNoteId);
+    if (!h) return;
+
+    // Check if there is an uncommitted typing burst in progress
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+      typingTimeout = null;
+      const currentDomContent = noteContentDiv ? noteContentDiv.innerHTML : '';
+      const currentDomTitle = noteTitleInput ? noteTitleInput.value : '';
+
+      if (h.current && (h.current.content !== currentDomContent || h.current.title !== currentDomTitle)) {
+        h.future.push({ title: currentDomTitle, content: currentDomContent });
+        const targetState = { ...h.current };
+
+        isUndoRedoAction = true;
+        if (noteTitleInput) noteTitleInput.value = targetState.title;
+        if (noteContentDiv) noteContentDiv.innerHTML = targetState.content;
+
+        const note = notes.find((n) => n.id === activeNoteId);
+        if (note) {
+          note.title = targetState.title;
+          note.content = targetState.content;
+          renderNotesList();
+        }
+
+        deselectImage();
+        triggerAutoSave();
+        updateUndoRedoButtons(activeNoteId);
+
+        setTimeout(() => {
+          isUndoRedoAction = false;
+        }, 60);
+        return;
+      }
+    }
+
+    if (h.past.length === 0) return;
+
+    const currentDomState = {
+      title: noteTitleInput ? noteTitleInput.value : '',
+      content: noteContentDiv ? noteContentDiv.innerHTML : '',
+    };
+
+    const prevState = h.past.pop();
+    h.future.push(currentDomState);
+    h.current = { ...prevState };
+
+    isUndoRedoAction = true;
+
+    if (noteTitleInput) noteTitleInput.value = prevState.title;
+    if (noteContentDiv) noteContentDiv.innerHTML = prevState.content;
+
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (note) {
+      note.title = prevState.title;
+      note.content = prevState.content;
+      renderNotesList();
+    }
+
+    deselectImage();
+    triggerAutoSave();
+    updateUndoRedoButtons(activeNoteId);
+
+    setTimeout(() => {
+      isUndoRedoAction = false;
+    }, 60);
+  }
+
+  function redo() {
+    if (!activeNoteId) return;
+    const h = getNoteHistory(activeNoteId);
+    if (!h || h.future.length === 0) return;
+
+    if (typingTimeout) {
+      clearTimeout(typingTimeout);
+      typingTimeout = null;
+    }
+
+    const currentDomState = {
+      title: noteTitleInput ? noteTitleInput.value : '',
+      content: noteContentDiv ? noteContentDiv.innerHTML : '',
+    };
+
+    const nextState = h.future.pop();
+    h.past.push(currentDomState);
+    h.current = { ...nextState };
+
+    isUndoRedoAction = true;
+
+    if (noteTitleInput) noteTitleInput.value = nextState.title;
+    if (noteContentDiv) noteContentDiv.innerHTML = nextState.content;
+
+    const note = notes.find((n) => n.id === activeNoteId);
+    if (note) {
+      note.title = nextState.title;
+      note.content = nextState.content;
+      renderNotesList();
+    }
+
+    deselectImage();
+    triggerAutoSave();
+    updateUndoRedoButtons(activeNoteId);
+
+    setTimeout(() => {
+      isUndoRedoAction = false;
+    }, 60);
+  }
+
+  // 6. Select Note into Editor
   function selectNote(note) {
     if (!note) {
       activeNoteId = null;
@@ -327,6 +608,8 @@
       if (saveNoteBtn) saveNoteBtn.disabled = true;
       if (exportNoteBtn) exportNoteBtn.disabled = true;
       if (printNoteBtn) printNoteBtn.disabled = true;
+      if (undoBtn) undoBtn.disabled = true;
+      if (redoBtn) redoBtn.disabled = true;
       if (saveIndicator) saveIndicator.textContent = '';
       updateStats('');
       hideLinkPopover();
@@ -335,6 +618,9 @@
     }
 
     activeNoteId = note.id;
+    if (activeSectionId) {
+      activeNoteBySection[activeSectionId] = note.id;
+    }
     if (noteTitleInput) {
       noteTitleInput.value = note.title || '';
       noteTitleInput.disabled = false;
@@ -353,6 +639,7 @@
     hideLinkPopover();
     deselectImage();
     renderNotesList();
+    initNoteHistory(note.id, note.title, note.content || '');
   }
 
   // 6. Save Note to Go Backend
@@ -381,7 +668,12 @@
       const updated = data.note;
 
       notes = notes.map((n) => (n.id === updated.id ? updated : n));
+      const secId = updated.section_id || activeSectionId;
+      if (notesCache[secId]) {
+        notesCache[secId] = notesCache[secId].map((n) => (n.id === updated.id ? updated : n));
+      }
       renderNotesList();
+      renderSections();
 
       try {
         localStorage.removeItem(`n0tes_draft_${noteId}`);
@@ -499,6 +791,12 @@
     };
 
     notes.unshift(newNote);
+    if (notesCache[activeSectionId]) {
+      notesCache[activeSectionId].unshift(newNote);
+    } else {
+      notesCache[activeSectionId] = [newNote];
+    }
+    renderSections();
     selectNote(newNote);
     setSaveStatus('saving');
 
@@ -517,7 +815,11 @@
       const data = await res.json();
       if (data.note) {
         notes = notes.map((n) => (n.id === newId ? data.note : n));
+        if (notesCache[activeSectionId]) {
+          notesCache[activeSectionId] = notesCache[activeSectionId].map((n) => (n.id === newId ? data.note : n));
+        }
         renderNotesList();
+        renderSections();
         setSaveStatus('saved', new Date().toLocaleTimeString());
       }
     } catch (err) {
@@ -598,6 +900,8 @@
           let cleanUrl = (urlInput ? urlInput.value : '').trim();
           if (!cleanUrl) return;
 
+          recordSnapshot(undefined, undefined, true);
+
           if (!/^https?:\/\//i.test(cleanUrl) && !cleanUrl.startsWith('#') && !cleanUrl.startsWith('/')) {
             cleanUrl = 'https://' + cleanUrl;
           }
@@ -635,6 +939,7 @@
           }
 
           triggerAutoSave();
+          recordSnapshot(undefined, undefined, true);
           closeModal();
           savedRange = null;
         }
@@ -643,6 +948,7 @@
   }
 
   function removeHyperlink() {
+    recordSnapshot(undefined, undefined, true);
     if (activeHoverLink && activeHoverLink.node) {
       const parent = activeHoverLink.node.parentNode;
       while (activeHoverLink.node.firstChild) {
@@ -650,10 +956,12 @@
       }
       parent.removeChild(activeHoverLink.node);
       hideLinkPopover();
+      recordSnapshot(undefined, undefined, true);
       triggerAutoSave();
       return;
     }
     document.execCommand('unlink', false, null);
+    recordSnapshot(undefined, undefined, true);
     triggerAutoSave();
   }
 
@@ -703,12 +1011,14 @@
       btn.onclick = (e) => {
         e.stopPropagation();
         if (!selectedImageNode || !noteContentDiv) return;
+        recordSnapshot(undefined, undefined, true);
         const pct = parseInt(btn.getAttribute('data-preset'), 10);
         const w = Math.round((noteContentDiv.clientWidth - 20) * (pct / 100));
         selectedImageNode.style.width = w + 'px';
         selectedImageNode.style.height = 'auto';
         selectedImageNode.setAttribute('width', w);
         updateResizeOverlay();
+        recordSnapshot(undefined, undefined, true);
         triggerAutoSave();
       };
     });
@@ -718,6 +1028,7 @@
       resetBtn.onclick = (e) => {
         e.stopPropagation();
         if (!selectedImageNode) return;
+        recordSnapshot(undefined, undefined, true);
         if (selectedImageNode.naturalWidth) {
           const maxW = (noteContentDiv?.clientWidth || 700) - 20;
           const targetW = Math.min(selectedImageNode.naturalWidth, maxW);
@@ -730,6 +1041,7 @@
           selectedImageNode.removeAttribute('width');
         }
         updateResizeOverlay();
+        recordSnapshot(undefined, undefined, true);
         triggerAutoSave();
       };
     }
@@ -739,6 +1051,7 @@
       btn.onclick = (e) => {
         e.stopPropagation();
         if (!selectedImageNode) return;
+        recordSnapshot(undefined, undefined, true);
         const align = btn.getAttribute('data-align');
         selectedImageNode.style.display = 'block';
         if (align === 'left') {
@@ -752,6 +1065,7 @@
           selectedImageNode.style.marginRight = '0';
         }
         updateResizeOverlay();
+        recordSnapshot(undefined, undefined, true);
         triggerAutoSave();
       };
     });
@@ -836,11 +1150,13 @@
 
   function deleteSelectedImage() {
     if (!selectedImageNode) return;
+    recordSnapshot(undefined, undefined, true);
     const img = selectedImageNode;
     deselectImage();
     if (img.parentNode) {
       img.parentNode.removeChild(img);
     }
+    recordSnapshot(undefined, undefined, true);
     triggerAutoSave();
     if (noteContentDiv) {
       updateStats(noteContentDiv.innerText);
@@ -851,6 +1167,8 @@
     if (!selectedImageNode) return;
     const container = document.getElementById('notepad-container');
     if (!container) return;
+
+    recordSnapshot(undefined, undefined, true);
 
     const img = selectedImageNode;
     const startX = e.clientX;
@@ -902,6 +1220,7 @@
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
       updateResizeOverlay();
+      recordSnapshot(undefined, undefined, true);
       triggerAutoSave();
     }
 
@@ -938,6 +1257,7 @@
     });
 
     noteContentDiv.addEventListener('input', () => {
+      recordSnapshot(noteTitleInput ? noteTitleInput.value : '', noteContentDiv.innerHTML, false);
       triggerAutoSave();
       updateStats(noteContentDiv.innerText);
     });
@@ -1014,6 +1334,32 @@
     }
   });
 
+  // Global Shortcut Listener for Undo (Ctrl+Z) and Redo (Ctrl+Y / Ctrl+Shift+Z)
+  window.addEventListener('keydown', (e) => {
+    if (e.target && (e.target.closest('.retro-modal') || e.target.closest('#modal-backdrop'))) return;
+    if (modalBackdrop && modalBackdrop.style.display === 'flex') return;
+
+    const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+    const isCtrlOrCmd = isMac ? e.metaKey : e.ctrlKey;
+
+    if (!isCtrlOrCmd) return;
+
+    const key = e.key.toLowerCase();
+    if (key === 'z') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) {
+        redo();
+      } else {
+        undo();
+      }
+    } else if (key === 'y') {
+      e.preventDefault();
+      e.stopPropagation();
+      redo();
+    }
+  }, true);
+
   // Window resize/scroll keeps overlay attached to image
   window.addEventListener('resize', updateResizeOverlay);
   window.addEventListener('scroll', updateResizeOverlay, true);
@@ -1046,6 +1392,8 @@
 
       if (!range) return;
 
+      recordSnapshot(undefined, undefined, true);
+
       const img = document.createElement('img');
       img.src = dataUrl;
       img.alt = file.name || 'Pasted image';
@@ -1072,6 +1420,7 @@
       }
 
       triggerAutoSave();
+      recordSnapshot(undefined, undefined, true);
       updateStats(noteContentDiv.innerText);
 
       // Auto-select newly inserted image
@@ -1095,11 +1444,16 @@
 
   if (noteTitleInput) {
     noteTitleInput.addEventListener('input', () => {
+      recordSnapshot(noteTitleInput.value, noteContentDiv ? noteContentDiv.innerHTML : '', false);
       triggerAutoSave();
       const currentTitle = noteTitleInput.value;
       const note = notes.find((n) => n.id === activeNoteId);
       if (note) {
         note.title = currentTitle;
+        if (notesCache[activeSectionId]) {
+          const cached = notesCache[activeSectionId].find((n) => n.id === activeNoteId);
+          if (cached) cached.title = currentTitle;
+        }
         renderNotesList();
       }
     });
@@ -1162,12 +1516,34 @@
   }
 
   // Formatting Toolbar Buttons
+  if (undoBtn) undoBtn.onclick = undo;
+  if (redoBtn) redoBtn.onclick = redo;
   if (insertLinkBtn) insertLinkBtn.onclick = openInsertLinkModal;
   if (removeLinkBtn) removeLinkBtn.onclick = removeHyperlink;
-  if (boldBtn) boldBtn.onclick = () => { document.execCommand('bold', false, null); triggerAutoSave(); };
-  if (italicBtn) italicBtn.onclick = () => { document.execCommand('italic', false, null); triggerAutoSave(); };
-  if (underlineBtn) underlineBtn.onclick = () => { document.execCommand('underline', false, null); triggerAutoSave(); };
-  if (bulletBtn) bulletBtn.onclick = () => { document.execCommand('insertUnorderedList', false, null); triggerAutoSave(); };
+  if (boldBtn) boldBtn.onclick = () => {
+    recordSnapshot(undefined, undefined, true);
+    document.execCommand('bold', false, null);
+    recordSnapshot(undefined, undefined, true);
+    triggerAutoSave();
+  };
+  if (italicBtn) italicBtn.onclick = () => {
+    recordSnapshot(undefined, undefined, true);
+    document.execCommand('italic', false, null);
+    recordSnapshot(undefined, undefined, true);
+    triggerAutoSave();
+  };
+  if (underlineBtn) underlineBtn.onclick = () => {
+    recordSnapshot(undefined, undefined, true);
+    document.execCommand('underline', false, null);
+    recordSnapshot(undefined, undefined, true);
+    triggerAutoSave();
+  };
+  if (bulletBtn) bulletBtn.onclick = () => {
+    recordSnapshot(undefined, undefined, true);
+    document.execCommand('insertUnorderedList', false, null);
+    recordSnapshot(undefined, undefined, true);
+    triggerAutoSave();
+  };
 
   // Manual Actions
   if (newNoteBtn) newNoteBtn.onclick = handleCreateNewNote;
@@ -1195,7 +1571,11 @@
             try {
               await fetch(`/api/notes/${encodeURIComponent(activeNoteId)}`, { method: 'DELETE' });
               notes = notes.filter((n) => n.id !== activeNoteId);
+              if (notesCache[activeSectionId]) {
+                notesCache[activeSectionId] = notesCache[activeSectionId].filter((n) => n.id !== activeNoteId);
+              }
               renderNotesList();
+              renderSections();
               selectNote(notes.length > 0 ? notes[0] : null);
               closeModal();
             } catch (err) {
@@ -1713,9 +2093,9 @@
             const data = await res.json();
             if (data.section) {
               sections.push(data.section);
-              activeSectionId = data.section.id;
+              notesCache[data.section.id] = [];
               renderSections();
-              loadNotes(activeSectionId);
+              switchSection(data.section.id);
               closeModal();
             }
           } catch (err) {
@@ -1788,11 +2168,22 @@
           try {
             await fetch(`/api/sections/${encodeURIComponent(sec.id)}`, { method: 'DELETE' });
             sections = sections.filter((s) => s.id !== sec.id);
+            delete notesCache[sec.id];
+            delete activeNoteBySection[sec.id];
             if (activeSectionId === sec.id) {
-              activeSectionId = sections.length > 0 ? sections[0].id : null;
+              const nextSec = sections.length > 0 ? sections[0].id : null;
+              if (nextSec) {
+                switchSection(nextSec);
+              } else {
+                activeSectionId = null;
+                notes = [];
+                renderSections();
+                renderNotesList();
+                selectNote(null);
+              }
+            } else {
+              renderSections();
             }
-            renderSections();
-            loadNotes(activeSectionId);
             closeModal();
           } catch (err) {
             console.error('Failed to delete section:', err);

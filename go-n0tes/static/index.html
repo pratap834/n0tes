@@ -6,6 +6,15 @@
   <title>Electronic Notepad • Go & NeonDB</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📝</text></svg>" />
   <link rel="stylesheet" href="/style.css" />
+  <script>
+    (function() {
+      try {
+        var saved = localStorage.getItem('n0tes_theme');
+        var theme = saved || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'obsidian' : 'classic');
+        document.documentElement.setAttribute('data-theme', theme);
+      } catch(e) {}
+    })();
+  </script>
 </head>
 <body>
   <div class="desk-wrapper">
@@ -27,6 +36,9 @@
         </div>
       </div>
       <div class="masthead-actions">
+        <button id="theme-toggle-btn" class="retro-btn" title="Switch between Classic Manila and Obsidian Desk Dark Mode">
+          🌙 Obsidian Desk
+        </button>
         <span id="today-date" class="masthead-date">📅 ...</span>
         <button id="new-note-btn" class="retro-btn primary" title="Create a new note in the current section">
           ✏️ New Note
@@ -112,6 +124,15 @@
 
           <!-- Inbuilt Retro Formatting Ribbon (Includes Hyperlink Feature) -->
           <div id="editor-format-bar" class="editor-format-bar">
+            <button id="undo-btn" class="format-btn" title="Undo last change (Ctrl+Z)" disabled>
+              ↶ Undo
+            </button>
+            <button id="redo-btn" class="format-btn" title="Redo undone change (Ctrl+Y or Ctrl+Shift+Z)" disabled>
+              ↷ Redo
+            </button>
+
+            <div class="format-divider"></div>
+
             <button id="insert-link-btn" class="format-btn" title="Add Hyperlink to selected text (Ctrl+K)">
               🔗 Add Link
             </button>

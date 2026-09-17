@@ -2,14 +2,12 @@ import { NextResponse } from 'next/server';
 import { dao } from '../../lib/db';
 
 export const dynamic = 'force-dynamic';
+// recompiled
 
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const sectionId = searchParams.get('sectionId');
-    if (!sectionId) {
-      return NextResponse.json({ error: 'sectionId query parameter is required' }, { status: 400 });
-    }
     const notes = await dao.getNotes(sectionId);
     return NextResponse.json({ notes });
   } catch (error) {

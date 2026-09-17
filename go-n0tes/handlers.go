@@ -94,11 +94,6 @@ func handleDeleteSection(w http.ResponseWriter, r *http.Request) {
 // Notes Handlers
 func handleGetNotes(w http.ResponseWriter, r *http.Request) {
 	sectionID := r.URL.Query().Get("sectionId")
-	if sectionID == "" {
-		jsonResponse(w, http.StatusBadRequest, map[string]string{"error": "sectionId query parameter is required"})
-		return
-	}
-
 	notes, err := GetNotes(sectionID)
 	if err != nil {
 		jsonResponse(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

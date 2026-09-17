@@ -619,6 +619,19 @@ html, body {
   background: #ded7c6;
 }
 
+.format-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  color: #8c8270;
+  background: #ded7c6;
+  border-top: 1px solid #c8c0b0;
+  border-left: 1px solid #c8c0b0;
+  border-right: 1px solid #c8c0b0;
+  border-bottom: 1px solid #c8c0b0;
+  box-shadow: none;
+  pointer-events: none;
+}
+
 .format-divider {
   width: 1px;
   height: 18px;
@@ -1077,3 +1090,523 @@ html, body {
     margin: 10px auto !important;
   }
 }
+
+/* ==========================================================================
+   OBSIDIAN DESK - DARK MODE STATIONERY PALETTE & THEME OVERRIDES
+   Midnight charcoal slate leather, deep obsidian ruled paper, blueprint-cyan
+   rules, muted crimson margin, and burnished dark brass rings.
+   ========================================================================== */
+
+[data-theme="obsidian"] {
+  --desk-bg: #151619;
+  --desk-pattern-1: #212328;
+  --paper-bg: #18181d;
+  --paper-cream: #1e1e24;
+  --paper-line: rgba(120, 160, 220, 0.14);
+  --paper-margin: rgba(220, 80, 80, 0.35);
+  --manila-tab: #292622;
+  --manila-tab-hover: #332f2a;
+  --manila-tab-active: #18181d;
+  --folder-border: #4a4235;
+  --folder-border-dark: #2f2a22;
+  --text-main: #e2ded4;
+  --text-muted: #9a9488;
+  --retro-blue: #7aa5d2;
+  --retro-btn-bg: #252429;
+  --retro-btn-border-light: #3e3c44;
+  --retro-btn-border-dark: #141317;
+  --retro-statusbar-bg: #17171b;
+}
+
+[data-theme="obsidian"] body {
+  background-color: var(--desk-bg);
+  color: var(--text-main);
+}
+
+/* Masthead Header */
+[data-theme="obsidian"] .retro-masthead {
+  background: #1c1d22;
+  border-color: #3a3832;
+  box-shadow: 2px 2px 0px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="obsidian"] .masthead-stamp {
+  background: #5b1e1e;
+  border-color: #d5a86a;
+  color: #f1e5d3;
+}
+
+[data-theme="obsidian"] .masthead-title {
+  color: #e8e4db;
+  text-shadow: 1px 1px 0px #0c0d0e;
+}
+
+[data-theme="obsidian"] .masthead-subtitle {
+  color: #9e988c;
+}
+
+[data-theme="obsidian"] .masthead-date {
+  background: #23242a;
+  color: #cfc9bd;
+  border-top-color: #151619;
+  border-left-color: #151619;
+  border-right-color: #3a3c44;
+  border-bottom-color: #3a3c44;
+}
+
+/* Retro Beveled Buttons */
+[data-theme="obsidian"] .retro-btn {
+  color: #e2ded4;
+  background: var(--retro-btn-bg);
+  border-top-color: var(--retro-btn-border-light);
+  border-left-color: var(--retro-btn-border-light);
+  border-right-color: var(--retro-btn-border-dark);
+  border-bottom-color: var(--retro-btn-border-dark);
+  box-shadow: 1px 1px 0px #0a0a0c;
+}
+
+[data-theme="obsidian"] .retro-btn:hover {
+  background: #2e2d34;
+}
+
+[data-theme="obsidian"] .retro-btn:active {
+  border-top-color: var(--retro-btn-border-dark);
+  border-left-color: var(--retro-btn-border-dark);
+  border-right-color: var(--retro-btn-border-light);
+  border-bottom-color: var(--retro-btn-border-light);
+}
+
+[data-theme="obsidian"] .retro-btn.primary {
+  background: #213524;
+  color: #97e6a5;
+  border-top-color: #3c5840;
+  border-left-color: #3c5840;
+  border-right-color: #111d13;
+  border-bottom-color: #111d13;
+}
+
+[data-theme="obsidian"] .retro-btn.primary:hover {
+  background: #28402c;
+}
+
+[data-theme="obsidian"] .retro-btn.danger {
+  background: #3e1e1d;
+  color: #f29895;
+  border-top-color: #5c302f;
+  border-left-color: #5c302f;
+  border-right-color: #1d0a0a;
+  border-bottom-color: #1d0a0a;
+}
+
+[data-theme="obsidian"] .retro-btn.danger:hover {
+  background: #4d2625;
+}
+
+/* Notebook Binder & Spine */
+[data-theme="obsidian"] .notebook-binder {
+  background: #1e1e24;
+  border-color: #101014;
+  box-shadow: 4px 6px 16px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="obsidian"] .binder-spine {
+  color: #d1c7b2;
+  border-bottom-color: #2d2b30;
+}
+
+[data-theme="obsidian"] .binder-ring {
+  background: linear-gradient(to right, #2a251b, #8a7550 45%, #bfa87a 55%, #302a20);
+  border-color: #1a1610;
+  box-shadow: inset 0 2px 3px rgba(0, 0, 0, 0.8), 1px 2px 4px rgba(0, 0, 0, 0.6);
+}
+
+/* Section Tabs */
+[data-theme="obsidian"] .section-tab {
+  background: var(--manila-tab);
+  border-color: #3e382f;
+  color: #b5aca0;
+}
+
+[data-theme="obsidian"] .section-tab:hover {
+  background: var(--manila-tab-hover);
+  color: #d6cec3;
+}
+
+[data-theme="obsidian"] .section-tab.active {
+  background: var(--paper-bg);
+  color: #f2ede4;
+  border-top: 3px solid #bfa87a;
+  border-left-color: #3e382f;
+  border-right-color: #3e382f;
+  box-shadow: 0 -2px 6px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="obsidian"] .section-tab .tab-badge {
+  background: rgba(255, 255, 255, 0.08);
+  color: #b5aca0;
+}
+
+[data-theme="obsidian"] .section-tab.active .tab-badge {
+  background: #2f2d35;
+  color: #dfd8cc;
+}
+
+[data-theme="obsidian"] .tab-action-btn {
+  color: #8e8679;
+}
+
+[data-theme="obsidian"] .tab-action-btn:hover {
+  color: #ff6b6b;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="obsidian"] .add-section-tab {
+  background: #262320;
+  border-color: #4a4235;
+  color: #9e9485;
+}
+
+[data-theme="obsidian"] .add-section-tab:hover {
+  background: #302c28;
+  color: #d1c7b8;
+}
+
+/* Main Folder Body & Sidebar */
+[data-theme="obsidian"] .folder-body {
+  background: var(--paper-bg);
+  border-color: var(--folder-border-dark);
+  box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="obsidian"] .notes-sidebar {
+  background: #1b1b20;
+  border-right-color: #2d2b33;
+}
+
+[data-theme="obsidian"] .sidebar-header {
+  background: #212128;
+  border-bottom-color: #2d2b33;
+}
+
+[data-theme="obsidian"] .sidebar-title {
+  color: #d1c9bd;
+}
+
+[data-theme="obsidian"] .retro-input {
+  background: #141418;
+  color: #e2ded4;
+  border-top-color: #2a2930;
+  border-left-color: #2a2930;
+  border-right-color: #3e3d48;
+  border-bottom-color: #3e3d48;
+}
+
+[data-theme="obsidian"] .retro-input:focus {
+  background: #18181e;
+  border-top-color: #504e5c;
+  border-left-color: #504e5c;
+}
+
+[data-theme="obsidian"] .notes-list::-webkit-scrollbar-track {
+  background: #18181d;
+  border-left-color: #25252d;
+}
+
+[data-theme="obsidian"] .notes-list::-webkit-scrollbar-thumb {
+  background: #34333c;
+  border-color: #18181d;
+}
+
+[data-theme="obsidian"] .note-item {
+  border-bottom: 1px dashed #2b2a33;
+}
+
+[data-theme="obsidian"] .note-item:hover {
+  background: #23232b;
+}
+
+[data-theme="obsidian"] .note-item.active {
+  background: #18181d;
+  border-left-color: #bfa87a;
+  box-shadow: inset 2px 0 0 rgba(191, 168, 122, 0.3);
+}
+
+[data-theme="obsidian"] .note-item-title {
+  color: #eae5dc;
+}
+
+[data-theme="obsidian"] .note-item-snippet {
+  color: #958f84;
+}
+
+[data-theme="obsidian"] .note-item-meta {
+  color: #7c776e;
+}
+
+[data-theme="obsidian"] .no-notes-msg {
+  color: #7c776e;
+}
+
+/* Editor Pane & Format Bar */
+[data-theme="obsidian"] .note-editor-pane {
+  background-color: var(--paper-bg);
+}
+
+[data-theme="obsidian"] .editor-toolstrip {
+  background: #1f1f26;
+  border-bottom-color: #2c2a33;
+}
+
+[data-theme="obsidian"] .save-indicator {
+  color: #8e887d;
+}
+
+[data-theme="obsidian"] .save-indicator.saving {
+  color: #e08a3c;
+}
+
+[data-theme="obsidian"] .save-indicator.saved {
+  color: #5bc475;
+}
+
+[data-theme="obsidian"] .editor-format-bar {
+  background: #1c1c22;
+  border-bottom-color: #2b2a33;
+}
+
+[data-theme="obsidian"] .format-btn {
+  background: #26252c;
+  color: #dcd6cb;
+  border-top-color: #413f4a;
+  border-left-color: #413f4a;
+  border-right-color: #141418;
+  border-bottom-color: #141418;
+}
+
+[data-theme="obsidian"] .format-btn:hover {
+  background: #313038;
+}
+
+[data-theme="obsidian"] .format-btn:active,
+[data-theme="obsidian"] .format-btn.active {
+  background: #16161b;
+  border-top-color: #141418;
+  border-left-color: #141418;
+  border-right-color: #413f4a;
+  border-bottom-color: #413f4a;
+}
+
+[data-theme="obsidian"] .format-btn:disabled {
+  opacity: 0.35;
+  background: #1a191f;
+  color: #63616b;
+  border-color: #25242b;
+}
+
+[data-theme="obsidian"] .format-divider {
+  background: #32303a;
+}
+
+/* Notepad Sheet & Editor Content */
+[data-theme="obsidian"] .notepad-sheet {
+  background-color: var(--paper-bg);
+}
+
+[data-theme="obsidian"] .note-title-input {
+  color: #f0ece1;
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+}
+
+[data-theme="obsidian"] .note-title-input::placeholder {
+  color: #666258;
+}
+
+[data-theme="obsidian"] .note-content-editable {
+  color: #e2ded4;
+}
+
+[data-theme="obsidian"] .note-content-editable:empty:before {
+  color: #666258;
+}
+
+[data-theme="obsidian"] .note-content-editable a,
+[data-theme="obsidian"] .notepad-sheet a {
+  color: #8ab4f8 !important;
+  background-color: rgba(138, 180, 248, 0.15);
+}
+
+[data-theme="obsidian"] .note-content-editable a:hover,
+[data-theme="obsidian"] .notepad-sheet a:hover {
+  color: #ffb4a2 !important;
+  background-color: rgba(255, 180, 162, 0.25) !important;
+}
+
+[data-theme="obsidian"] .note-content-editable a:visited,
+[data-theme="obsidian"] .notepad-sheet a:visited {
+  color: #c58af9 !important;
+}
+
+/* Images & Resize Controls */
+[data-theme="obsidian"] .retro-note-image {
+  border-color: #3e3b33;
+  box-shadow: 2px 3px 12px rgba(0, 0, 0, 0.6);
+  background-color: #141418;
+}
+
+[data-theme="obsidian"] .retro-note-image:hover {
+  border-color: #bfa87a;
+  box-shadow: 2px 4px 16px rgba(0, 0, 0, 0.75);
+}
+
+[data-theme="obsidian"] .retro-note-image.selected {
+  outline-color: #bfa87a;
+}
+
+[data-theme="obsidian"] .image-resize-overlay {
+  border-color: #bfa87a;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9), 0 3px 10px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="obsidian"] .resize-handle {
+  background-color: #262420;
+  border-color: #bfa87a;
+  box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="obsidian"] .resize-handle:hover {
+  background-color: #bfa87a;
+  border-color: #ffffff;
+}
+
+[data-theme="obsidian"] .image-resize-toolbar {
+  background: #232228;
+  border-top-color: #3f3d47;
+  border-left-color: #3f3d47;
+  border-right-color: #121215;
+  border-bottom-color: #121215;
+  box-shadow: 2px 3px 10px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="obsidian"] .img-tool-badge {
+  background: #1a191f;
+  color: #aba497;
+  border-color: #2d2b33;
+}
+
+[data-theme="obsidian"] .img-tool-btn {
+  background: #2a2930;
+  color: #ded8cc;
+  border-top-color: #45434e;
+  border-left-color: #45434e;
+  border-right-color: #141417;
+  border-bottom-color: #141417;
+}
+
+[data-theme="obsidian"] .img-tool-btn:hover {
+  background: #36343e;
+}
+
+[data-theme="obsidian"] .img-tool-btn:active {
+  border-top-color: #141417;
+  border-left-color: #141417;
+  border-right-color: #45434e;
+  border-bottom-color: #45434e;
+}
+
+[data-theme="obsidian"] .img-tool-btn.danger {
+  color: #ff7b72;
+}
+
+[data-theme="obsidian"] .img-tool-btn.danger:hover {
+  background: #3e1e1d;
+}
+
+/* Link Popover */
+[data-theme="obsidian"] .retro-link-popover {
+  background: #222127;
+  border-top-color: #3e3c45;
+  border-left-color: #3e3c45;
+  border-right-color: #121115;
+  border-bottom-color: #121115;
+  box-shadow: 2px 4px 12px rgba(0, 0, 0, 0.6);
+}
+
+[data-theme="obsidian"] .retro-link-popover a.link-preview {
+  color: #8ab4f8;
+}
+
+[data-theme="obsidian"] .popover-btn {
+  background: #2b2a32;
+  color: #e2ded4;
+  border-top-color: #464450;
+  border-left-color: #464450;
+  border-right-color: #131216;
+  border-bottom-color: #131216;
+}
+
+[data-theme="obsidian"] .popover-btn:hover {
+  background: #373540;
+}
+
+[data-theme="obsidian"] .popover-btn:active {
+  border-top-color: #131216;
+  border-left-color: #131216;
+  border-right-color: #464450;
+  border-bottom-color: #464450;
+}
+
+/* Status Bar */
+[data-theme="obsidian"] .retro-statusbar {
+  background: var(--retro-statusbar-bg);
+  border-color: var(--folder-border-dark);
+}
+
+[data-theme="obsidian"] .status-panel {
+  background: #1f1f25;
+  border-top-color: #141418;
+  border-left-color: #141418;
+  border-right-color: #2f2e38;
+  border-bottom-color: #2f2e38;
+  color: #b5aea1;
+}
+
+/* Modals */
+[data-theme="obsidian"] .retro-modal-window {
+  background: #232228;
+  border-top-color: #3f3d47;
+  border-left-color: #3f3d47;
+  border-right-color: #111114;
+  border-bottom-color: #111114;
+  box-shadow: 4px 6px 20px rgba(0, 0, 0, 0.8);
+}
+
+[data-theme="obsidian"] .retro-modal-titlebar {
+  background: linear-gradient(to right, #1b2633, #2a3a4e);
+  color: #f0ece1;
+}
+
+[data-theme="obsidian"] .retro-modal-close-btn {
+  background: #2c2a32;
+  color: #e2ded4;
+  border-top-color: #44424e;
+  border-left-color: #44424e;
+  border-right-color: #121215;
+  border-bottom-color: #121215;
+}
+
+[data-theme="obsidian"] .retro-modal-body label {
+  color: #dfd8cd;
+}
+
+/* Tip Banner */
+[data-theme="obsidian"] .neon-tip-banner {
+  background: #262319;
+  border-color: #5a4b27;
+  color: #e2c97a;
+}
+
+[data-theme="obsidian"] .neon-tip-banner code {
+  background: #1a170f;
+  color: #ffd770;
+}
+
